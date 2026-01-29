@@ -1,0 +1,190 @@
+## 🔧 Replit Prompt (final with plantation type + Supabase URL policy)
+
+*Project context*
+
+* Flask backend with /dashboard running. Keep all existing flows.
+* Roles: ADMIN, VERIFIER, USER with USER.user_type ∈ {BUYER, CONTRIBUTOR}.
+* Credits & carbon_avoided are calculated in backend. Frontend must not recalc.
+* Proof documents are stored on *Supabase Storage (cloud)*.
+
+---
+
+## 1) Roles (RBAC) — unchanged
+
+Auth payload must include role and, for USER, user_type: "BUYER" | "CONTRIBUTOR".
+
+---
+
+## 2) Data model (backward-compatible + plantation type)
+
+*users*
+
+* _id, name, role, user_type?, org_name?, location
+
+*contributors* (farmers/landowners)
+
+* _id, userId, name, location, area_ha
+* plantation_type: "Mangrove" | "Seagrass" | "Tidal Marsh" | "Salt Marsh" | "Other"  ← *NEW*
+* status: "PENDING" | "APPROVED" | "REJECTED"
+* doc_urls: [{ path: string, url?: string }]  // Supabase storage path + optional signed URL
+* credits_earned: number
+* carbon_avoided_tpy: number
+
+*buyers*
+
+* _id, userId, name/org_name, location, credits_purchased: number
+
+*transactions* (if present, keep as-is)
+
+*Indexes*
+
+* contributors: { credits_earned: -1 }
+* buyers: { credits_purchased: -1 }
+* Optional filter index: { plantation_type: 1, status: 1 }
+
+> Migration: add plantation_type with default "Other" where missing.
+
+---
+
+## 3) Supabase Storage (cloud) — hackathon-friendly setup
+
+*Goal:* Fast real-time demo with stable links.
+
+Set one of these (pick A or B):
+
+*A) Public bucket (fastest for demo)*
+
+* Make bucket **proof-docs** *Public*.
+* Store and return *public file URLs* in doc_urls[].url.
+* Security note in README: “Public for hackathon demo; switch to private + signed URLs for production.”
+
+*B) Private bucket with long-lived signed URLs*
+
+* Keep bucket *Private*.
+* Server uploads files and generates *signed URLs* with a *longer expiry* (e.g., 7 days).
+* Add env vars:
+
+
+SUPABASE_URL=<your-project-url>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # server-only
+SUPABASE_BUCKET=proof-docs
+SUPABASE_SIGNED_URL_EXPIRES=604800             # 7 days in seconds
+
+
+* Implement refresh endpoint to reissue signed URLs when needed:
+
+  * GET /api/uploads/proof/{contributorId}/urls → returns fresh signed links for that contributor.
+
+> The previous 1-hour expiry was a *security default. For hackathon **increase to 7 days* or use a *Public* bucket for zero friction.
+
+---
+
+## 4) Upload endpoints (server-side only; do not expose service key)
+
+* POST /api/uploads/proof
+  multipart/form-data fields: file, contributorId
+  Upload to proof-docs/<contributorId>/<uuid>.<ext>
+
+  * If *Public bucket: store the resulting **public URL* in contributors.doc_urls[]
+  * If *Private bucket*: store {path} and also a *signed URL* (expiry from env var)
+
+* GET /api/uploads/proof/{contributorId}/urls (only if Private bucket)
+  Regenerate signed URLs for all stored `path`s and return.
+
+RBAC: only the *owner contributor* (or Admin) can upload/view their docs.
+
+---
+
+## 5) Backend APIs to add/adjust
+
+* POST /api/contributors/register
+  Body:
+
+  json
+  { "name": "...", "location": "...", "area_ha": 0, "plantation_type": "Mangrove" }
+  
+
+  Creates contributor with status="PENDING", credits_earned=0.
+  Triggers your existing calc pipeline to fill carbon_avoided_tpy.
+
+* GET /api/users/buyers-view  (BUYER directory of contributors)
+  Query: page?, q?, location?, plantation_type?
+  Returns *only* status="APPROVED", fields:
+  name, location, area_ha, plantation_type, credits (backend), carbon_avoided_tpy
+
+* GET /api/buyers
+  Registered buyers sorted by *credits_purchased desc*.
+
+* GET /api/contributors
+  Contributors sorted by *credits_earned desc*. Include plantation_type.
+
+RBAC:
+
+* ADMIN: /api/buyers, /api/contributors
+* USER:BUYER: /api/users/buyers-view
+* USER:CONTRIBUTOR: /api/contributors/register, /api/uploads/proof*
+* VERIFIER: unchanged
+
+---
+
+## 6) Frontend: /dashboard minimal changes (don’t break existing flow)
+
+*A) USER → BUYER view*
+
+* Replace “users list” with *Contributors Directory* table:
+  Columns:
+  Name | Location | Area (ha) | Plantation | Credits | Carbon Avoided (tCO₂/yr)
+* Add filters:
+
+  * Search by name
+  * Filter by location
+  * Filter by *Plantation Type* (dropdown: Mangrove, Seagrass, Tidal Marsh, Salt Marsh, Other)
+* Data: GET /api/users/buyers-view with query params
+* Row detail panel: show documents (use public URL or call /urls to refresh signed links if Private bucket)
+
+*B) USER → CONTRIBUTOR view*
+
+* *Register form* fields: Name, Location, Area (ha), Plantation Type (select)
+  Submit → POST /api/contributors/register
+* *Upload Proof*: file picker → POST /api/uploads/proof (show list of uploaded docs)
+
+*C) ADMIN view*
+
+* Section 1: *Registered Buyers* (sorted by most credits purchased)
+  Columns: Name/Org | Location | Credits Purchased
+* Section 2: *Contributors* (sorted by most credits earned)
+  Columns: Name | Location | Area (ha) | Plantation | Credits Earned | Carbon Avoided
+* Keep all other admin features as-is.
+
+*D) VERIFIER*
+
+* No changes.
+
+Small footer note:
+“Carbon values are backend estimates. Documents served via Supabase (Public or Signed URLs).”
+
+---
+
+## 7) Server-side sorting/pagination
+
+* Do sorting in DB (credits desc).
+* Support limit & offset/page.
+* Return { items: [...], total }.
+
+---
+
+## 8) Acceptance checklist
+
+* Contributor can register with *plantation_type* and upload proof to Supabase.
+* Buyer directory shows *plantation type* and *carbon/credits* for each contributor.
+* Admin shows *buyer leaderboard* and *contributor leaderboard* (sorted by credits), including plantation type.
+* Existing verifier and other flows remain intact.
+
+---
+
+## 9) README updates
+
+* Add *Supabase* setup + bucket visibility choice (Public vs Private w/ 7-day signed URLs).
+* Document plantation_type enum and where it appears (Contributor form, Buyer directory, Admin list).
+
+---

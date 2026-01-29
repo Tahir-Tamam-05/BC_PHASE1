@@ -1,0 +1,175 @@
+# Current Architecture Overview
+
+## A. 📁 Current Project Structure
+
+```
+.
+├── SUPABASE_SETUP.md
+├── attached_assets/
+│   ├── prompts_and_docs/
+│   ├── images/
+│   └── stock_images/
+├── client/
+│   ├── index.html
+│   ├── public/
+│   │   └── favicon.png
+│   └── src/
+│       ├── App.tsx
+│       ├── components/
+│       ├── hooks/
+│       ├── index.css
+│       ├── lib/
+│       ├── main.tsx
+│       └── pages/
+├── components.json
+├── design_guidelines.md
+├── drizzle.config.ts
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── replit.md
+├── server/
+│   ├── auth.ts
+│   ├── blockchain.ts
+│   ├── carbonCalculation.ts
+│   ├── db.ts
+│   ├── index.ts
+│   ├── objectAcl.ts
+│   ├── objectStorage.ts
+│   ├── routes.ts
+│   ├── seed.ts
+│   ├── storage.ts
+│   └── vite.ts
+├── shared/
+│   └── schema.ts
+├── tailwind.config.ts
+├── tsconfig.json
+└── vite.config.ts
+```
+
+---
+
+## B. 🧠 Architectural Understanding
+
+**Architecture Style:** Full-stack monorepo (TypeScript) with clear frontend/backend separation.
+
+**Layered Flow:**
+
+* **Client Layer (`client/`)**
+  React + Vite SPA responsible for UI, routing, and user interaction.
+
+* **API Layer (`server/routes.ts`)**
+  Central routing layer exposing REST endpoints.
+
+* **Service Layer (`server/storage.ts`, `carbonCalculation.ts`, `blockchain.ts`)**
+  Business logic abstraction, domain calculations, and ledger-style transaction handling.
+
+* **Persistence Layer (`server/db.ts`, `shared/schema.ts`)**
+  Database access through Drizzle ORM with shared type-safe schema.
+
+* **Shared Contract (`shared/schema.ts`)**
+  Single source of truth for data models and validation across frontend and backend.
+
+**Data Flow:**
+
+```
+Client (React)
+   → API (Express Routes)
+      → Services (Business Logic)
+         → Persistence (Drizzle ORM)
+            → PostgreSQL / Supabase
+```
+
+---
+
+## C. ⚙️ Tech Stack Inference
+
+### Frontend
+
+* React (TypeScript)
+* Vite
+* TailwindCSS
+* Shadcn/UI
+* Custom hooks architecture
+
+### Backend
+
+* Node.js
+* Express
+* TypeScript
+* Custom auth layer (`auth.ts`)
+* Modular services (`storage.ts`, `carbonCalculation.ts`)
+
+### Database
+
+* PostgreSQL-compatible
+* Drizzle ORM
+* Zod schema validation
+
+### Infrastructure & Tooling
+
+* Vite build system
+* Tailwind + PostCSS
+* Drizzle migrations
+* Supabase integration references
+
+### Domain Systems
+
+* Carbon credit calculation engine
+* Blockchain-style ledger abstraction (`blockchain.ts`)
+* Object storage abstraction (`objectStorage.ts`)
+
+---
+
+## D. 🔐 Domain & Feature Signals
+
+**Domain:** Blue Carbon Ecosystem Platform
+
+**Focus Areas:**
+
+* Mangrove ecosystems
+* Wetlands
+* Salt marsh conservation
+* Blue carbon sequestration
+
+**Implied Actors:**
+
+* Users (project creators)
+* Verifiers (validators)
+* Admins (governance)
+
+**Core Platform Capabilities:**
+
+* Project onboarding
+* Carbon sequestration calculation
+* Verification workflows
+* Ledger-based transaction tracking
+* Tokenized credit modeling
+* Storage of environmental evidence
+
+---
+
+## E. ⚠️ Architectural Observations (No Fixes)
+
+* Dual auth signals: presence of `SUPABASE_SETUP.md` vs custom `auth.ts` logic indicates mixed authentication direction.
+* Blockchain abstraction is logical/ledger-based, not decentralized.
+* Object storage is abstracted but environment-specific.
+* Attached assets folder indicates heavy AI-assisted design iteration history.
+* System is evolving from prototype architecture toward production structure.
+* Strong domain separation already exists (calculation, ledger, storage, auth).
+
+---
+
+## F. System Maturity Assessment
+
+**Current State:** Advanced prototype / early production architecture
+
+**Characteristics:**
+
+* Strong modular separation
+* Clear domain boundaries
+* Type-safe data modeling
+* Monorepo efficiency
+* AI-assisted design artifacts
+
+This system is structurally suitable for transition into a production-grade platform with controlled hardening, security policies, and deployment pipelines.

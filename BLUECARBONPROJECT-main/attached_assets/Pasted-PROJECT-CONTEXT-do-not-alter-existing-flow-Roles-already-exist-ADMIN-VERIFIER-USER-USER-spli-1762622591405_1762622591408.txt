@@ -1,0 +1,145 @@
+PROJECT CONTEXT (do not alter existing flow)
+
+Roles already exist: ADMIN, VERIFIER, USER.
+
+USER splits into: BUYER (companies/NGOs/organisations) and CONTRIBUTOR (farmers/landowners).
+
+Dashboard lives at: http://localhost:5000/dashboard
+
+Credits and carbon_avoided are computed in the backend—do not recalc on the frontend.
+
+Plantation type is captured for contributors and visible to buyers.
+
+Proof documents are stored on Supabase Storage (cloud). Use either a Public bucket or Private bucket with long-lived signed URLs. For hackathon, prefer Public or 7-day signed URLs. Do not expose service keys client-side.
+
+NEW FEATURE GOAL (credits purchase + reflection both sides)
+
+Buyers can purchase credits from specific contributors.
+
+After purchase:
+
+buyer’s total credits_purchased increases,
+
+contributor’s credits_earned decreases,
+
+a transaction record is created (who bought from whom, when, how many),
+
+both Buyer and Contributor dashboards immediately reflect the change,
+
+Admin lists and leaderboards reflect updated totals,
+
+No other app behavior is modified.
+
+DATA MODEL (additions only; no renames)
+
+Keep existing collections/tables as-is.
+
+Ensure these fields exist:
+
+buyers: name/org_name, location, credits_purchased (number).
+
+contributors: name, location, area_ha, plantation_type, credits_earned (number), carbon_avoided_tpy (number), status, doc_urls (array of Supabase URLs or paths).
+
+Add one new collection/table: transactions
+
+fields: buyerId, contributorId, credits, timestamp (and any IDs you already use).
+
+Add/confirm indexes for descending sort on buyers.credits_purchased and contributors.credits_earned.
+
+SUPABASE STORAGE (documents)
+
+Bucket name: proof-docs.
+
+For hackathon: either Public bucket (store public URLs) OR Private bucket with signed URLs expiring in ~7 days.
+
+Server handles uploads and URL generation; client never sees service role key.
+
+Keep existing document upload flow intact; only ensure stored URLs/paths remain usable after the changes.
+
+BACKEND BEHAVIOR (no refactor; add minimal endpoints/handlers)
+
+Add a single purchase action that:
+
+validates buyerId, contributorId, credits > 0, and contributor has sufficient credits_earned,
+
+atomically adjusts balances: contributor.credits_earned -= credits; buyer.credits_purchased += credits,
+
+creates a transaction entry (buyerId, contributorId, credits, timestamp),
+
+returns updated buyer and contributor summaries for instant UI refresh.
+
+Sorting requirements (server-side):
+
+Admin “Registered Buyers” list sorted by credits_purchased desc.
+
+Admin “Contributors” list sorted by credits_earned desc.
+
+Buyer directory (the view buyers see) must list APPROVED contributors and include: name, location, area_ha, plantation_type, credits (from backend), carbon_avoided_tpy.
+
+Support optional filters: search by name, filter by location, filter by plantation_type.
+
+Do not rename or remove any existing route. Only add what’s necessary to support the purchase flow and the two sorted admin lists.
+
+FRONTEND / DASHBOARD CHANGES (minimal)
+
+USER → BUYER:
+
+Add a “Buy Credits” action: select contributor, input credits, confirm purchase.
+
+After success, refresh buyer summary (total credits_purchased) and show a “Purchased From” list sourced from transactions (with contributor names and amounts).
+
+Buyer’s contributor directory continues to show: name, location, area_ha, plantation_type, credits, carbon_avoided_tpy.
+
+USER → CONTRIBUTOR:
+
+Show “Credits Available” (current credits_earned after deductions).
+
+Show “Sold To” list from transactions (buyer name, credits, timestamp).
+
+Existing registration, plantation_type, and document upload remain as they are.
+
+ADMIN:
+
+Section 1: Registered Buyers list sorted by most credits purchased (show: name/org, location, credits_purchased).
+
+Section 2: Contributors list sorted by most credits earned (show: name, location, area_ha, plantation_type, credits_earned, carbon_avoided_tpy).
+
+Do not alter any other admin tools/pages.
+
+VERIFIER: unchanged.
+
+VALIDATION & RULES
+
+Prevent purchases that exceed contributor’s available credits_earned.
+
+Handle concurrent purchases safely (no negative balances).
+
+All list updates must reflect immediately post-purchase (return updated snapshots for UI).
+
+ACCEPTANCE CRITERIA
+
+Buying credits increases buyer’s credits_purchased and reduces the selected contributor’s credits_earned in one operation.
+
+A transaction record exists for each purchase and is visible in Buyer (“Purchased From”) and Contributor (“Sold To”).
+
+Admin sees both lists correctly sorted by credits totals.
+
+Buyer directory still shows contributors with plantation_type and impact fields.
+
+Supabase document links remain functional (Public or 7-day signed URLs).
+
+No existing routes, flows, or pages break.
+
+NON-GOALS (do not change)
+
+Do not modify carbon_avoided calculation logic.
+
+Do not rename any existing fields or endpoints.
+
+Do not change the verifier flow or other project dashboards.
+
+Do not move off Supabase for documents.
+
+DELIVERABLE
+
+Minimal backend additions to support purchase and lists, plus small UI surface to trigger purchase and show the two transaction views—everything else identical to current behavior.

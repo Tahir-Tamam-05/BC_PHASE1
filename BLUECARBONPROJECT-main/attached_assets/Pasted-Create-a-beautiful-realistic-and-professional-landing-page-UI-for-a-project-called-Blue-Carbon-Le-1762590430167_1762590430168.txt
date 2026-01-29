@@ -1,0 +1,148 @@
+Create a beautiful, realistic, and professional landing page UI for a project called “Blue Carbon Ledger”, a blockchain-powered blue carbon credit registry.
+This project should run directly on Replit using React + Tailwind CSS (no Next.js).
+The final design must look like a real-world environmental platform, not a cartoon or animated kid-style site.
+
+🎨 Aesthetic and Visual Style
+
+Mood: Clean, elegant, and natural — evoking trust, sustainability, and innovation.
+
+Theme: Oceanic and coastal — inspired by mangroves, seagrass meadows, and salt marshes.
+
+Color Palette:
+
+Deep Ocean Blue: #0B3954
+
+Sea Green: #00A896
+
+Sand Beige: #F3F4ED
+
+White and Charcoal Gray for contrast.
+
+Typography: Use Poppins or Inter for headings and body text. Smooth rounded edges, no harsh corners.
+
+UI Style:
+
+Glassmorphism effects on cards (blurred translucent backgrounds).
+
+Subtle drop shadows for depth.
+
+Gradient overlays (e.g., blue to green) for soft lighting.
+
+Realistic textures (like calm ocean ripples or underwater light rays).
+
+Avoid: Cartoon icons, over-saturated colors, harsh animations, and bouncy transitions.
+
+🖼 Hero Section (Landing Header)
+
+Full-width realistic background using an ocean or mangrove image (from Unsplash or Pexels).
+
+Add a soft motion effect — either a slow-moving gradient overlay or a subtle ocean wave video background (looped, muted).
+
+Overlay gradient: dark blue to transparent, ensuring white text is readable.
+
+Include:
+
+Logo (wave or leaf icon with “BlueCarbon Ledger”).
+
+Headline:
+
+BlueCarbon Ledger
+Blockchain-Powered Blue Carbon Credit Registry
+
+Subtext:
+
+Secure, transparent, and verifiable carbon credits from ocean and coastal ecosystems.
+
+Two buttons:
+
+Get Started (primary button in sea green)
+
+Learn More (outlined in white or soft gray)
+
+Small info boxes below the hero text showing:
+
+245K+ Carbon Credits
+
+156 Active Projects
+
+1.8K Verified Transactions
+
+🌿 Blue Carbon Ecosystems Section
+
+Create a clean 3-card grid (responsive).
+Each card should display:
+
+A realistic photograph (no illustration)
+
+Title and short description
+
+Cards:
+
+Mangroves
+
+Image: tropical mangrove forest or coastal trees at sunset.
+
+Description: “Coastal forests that sequester up to 10x more carbon than terrestrial forests.”
+
+Seagrass Meadows
+
+Image: underwater seagrass meadows with sunlight filtering through.
+
+Description: “Underwater meadows storing carbon in sediments for millennia.”
+
+Salt Marshes
+
+Image: tidal wetlands with glowing sunlight.
+
+Description: “Tidal wetlands with exceptional carbon capture capabilities.”
+
+Use soft hover effects — image zoom or shadow lift.
+
+💧 Active Projects Section
+
+Display 3–4 project preview cards:
+Each card includes:
+
+Realistic ocean or coastal project image.
+
+Title (e.g., “Restore Mangrove Bay”).
+
+Status badge (“Verified”, “Ongoing”, “New”).
+
+Short subtext (e.g., “Coastal restoration • 120 hectares”).
+Add a gentle hover zoom and card shadow glow — realistic and minimal.
+
+⚙ Technical Notes
+
+Framework: React + Tailwind CSS
+
+File structure: src/components/BlueCarbonLanding.jsx for modularity.
+
+Ensure full responsiveness for all screen sizes.
+
+Smooth transitions (fade, slide, or parallax) — no exaggerated bounce.
+
+Background overlay animation example:
+
+A very slow-moving gradient or shimmering underwater light texture.
+
+Use accessible color contrasts for readability.
+
+Hero background example image:
+
+https://images.unsplash.com/photo-1503264116251-35a269479413?auto=format&fit=crop&w=2000&q=60
+
+Optional subtle ocean motion background video (looped and muted):
+
+Pexels: “Calm underwater ocean sunlight”
+
+Example search term: “realistic underwater ocean sunlight calm waves 4K video”
+
+🧩 Footer
+
+Keep it clean and minimal.
+
+Include copyright text:
+
+© 2025 BlueCarbon Ledger. Built for a Sustainable Future.
+Ultra-realistic tropical mangrove ecosystem under golden sunlight, calm ocean reflections, cinematic lighting, natural depth, underwater clarity — for environmental blockchain landing page background
