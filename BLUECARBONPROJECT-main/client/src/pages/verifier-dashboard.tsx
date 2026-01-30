@@ -1,18 +1,20 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, CheckCircle, XCircle, Layers, FileCheck } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Layers, FileCheck, Map, Loader2 } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
 import { format } from 'date-fns';
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/lib/auth-context';
+
+const GISLandMap = lazy(() => import('@/components/gis-land-map'));
 
 export default function VerifierDashboard() {
   const { toast } = useToast();
@@ -258,8 +260,61 @@ export default function VerifierDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <h3 className="font-semibold mb-2">CO₂ Captured</h3>
-                    <p className="text-2xl font-bold text-primary">{selectedProject.co2Captured} tons</p>
+                    <h3 className="font-semibold mb-2">Location</h3>
+                    <p className="text-muted-foreground">{selectedProject.location}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-2">Ecosystem Type</h3>
+                    <p className="text-muted-foreground">{selectedProject.ecosystemType}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="font-semibold mb-2">Land Area</h3>
+                    <p className="text-2xl font-bold text-primary">{selectedProject.area} hectares</p>
+                    {selectedProject.landBoundary && (
+                      <p className="text-xs text-muted-foreground mt-1">GIS-verified measurement</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-2">CO₂ Captured (20yr)</h3>
+                    <p className="text-2xl font-bold text-primary">{selectedProject.co2Captured?.toFixed(2) || selectedProject.lifetimeCO2?.toFixed(2)} tons</p>
+                  </div>
+                </div>
+                {selectedProject.landBoundary && (
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Map className="w-4 h-4" />
+                      Land Boundary Map (Two-Factor Verification - Part 1)
+                    </h3>
+                    <div className="bg-muted/30 p-2 rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        GIS polygon drawn by contributor - verify boundaries match claimed location
+                      </p>
+                      <Suspense fallback={
+                        <div className="h-[300px] flex items-center justify-center border rounded-lg bg-muted/50">
+                          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        </div>
+                      }>
+                        <GISLandMap
+                          initialBoundary={(() => {
+                            try {
+                              return JSON.parse(selectedProject.landBoundary);
+                            } catch {
+                              return [];
+                            }
+                          })()}
+                          onBoundaryChange={() => {}}
+                          readOnly={true}
+                        />
+                      </Suspense>
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="font-semibold mb-2">Annual CO₂</h3>
+                    <p className="text-muted-foreground">{selectedProject.annualCO2?.toFixed(2)} tons/year</p>
                   </div>
                   <div>
                     <h3 className="font-semibold mb-2">Submitted</h3>

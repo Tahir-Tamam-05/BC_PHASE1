@@ -1,18 +1,20 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User } from 'lucide-react';
+import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, Map, Loader2 } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
 import { useAuth } from '@/lib/auth-context';
 import { HashDisplay } from '@/components/hash-display';
 import { format } from 'date-fns';
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { ProjectSubmissionForm } from '@/components/project-submission-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+
+const GISLandMap = lazy(() => import('@/components/gis-land-map'));
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -304,12 +306,40 @@ export default function UserDashboard() {
                   <div>
                     <h3 className="font-semibold mb-2">Area</h3>
                     <p className="text-muted-foreground">{selectedProject.area || 'N/A'} hectares</p>
+                    {selectedProject.landBoundary && (
+                      <p className="text-xs text-primary mt-1">GIS-verified measurement</p>
+                    )}
                   </div>
                   <div>
                     <h3 className="font-semibold mb-2">Ecosystem Type</h3>
                     <p className="text-muted-foreground">{selectedProject.ecosystemType || 'N/A'}</p>
                   </div>
                 </div>
+                {selectedProject.landBoundary && (
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Map className="w-4 h-4" />
+                      Land Boundary Map
+                    </h3>
+                    <Suspense fallback={
+                      <div className="h-[300px] flex items-center justify-center border rounded-lg bg-muted/50">
+                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                      </div>
+                    }>
+                      <GISLandMap
+                        initialBoundary={(() => {
+                          try {
+                            return JSON.parse(selectedProject.landBoundary);
+                          } catch {
+                            return [];
+                          }
+                        })()}
+                        onBoundaryChange={() => {}}
+                        readOnly={true}
+                      />
+                    </Suspense>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg">
                   <div>
                     <h3 className="font-semibold mb-2">Annual CO₂ Sequestration</h3>
