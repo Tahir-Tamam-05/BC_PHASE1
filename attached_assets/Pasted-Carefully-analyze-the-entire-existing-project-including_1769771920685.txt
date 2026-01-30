@@ -1,0 +1,51 @@
+Carefully analyze the entire existing project, including all files, folders, inline comments, and the Current Architecture Overview document.
+
+Before making any changes, you MUST:
+- Confirm the application is fully working in its current deployed state on Replit
+- Understand the full Contributor → Verifier workflow as defined in the PRD
+- Identify the existing Farmer (Contributor) land input form and how land area data currently flows to the Verifier section
+
+Objective:
+Implement a GIS-based land measurement feature ONLY for the Farmer (Contributor) land registration flow, inspired by the provided GIS reference (Tap → Trace → Done polygon-based mapping).
+
+Functional requirements (strictly scoped to Farmer → Verifier flow):
+1. Farmer (Contributor) Flow:
+   - Replace or enhance the manual land-area input with a GIS-based interface
+   - Allow the farmer to:
+     - Tap / trace land boundaries on a map (polygon drawing)
+     - Automatically calculate land area from the drawn polygon
+   - Display the calculated area clearly to the farmer
+   - Preserve the existing flow and submission logic
+
+2. Data Propagation:
+   - The GIS-calculated land area and boundary data must be passed forward using the existing project data flow
+   - No changes to how other data fields behave
+   - The GIS-calculated area becomes the authoritative land area value
+
+3. Verifier Flow:
+   - Surface the GIS-calculated land area and boundary visualization in the Verifier section
+   - Verifiers must be able to view (read-only) the mapped land and calculated area
+   - No manual recalculation or editing by the Verifier
+   - This serves as Two-Factor Verification – Part 1 as defined in the PRD
+
+Strict constraints (DO NOT VIOLATE):
+- Do NOT change the existing folder structure
+- Do NOT modify routing, authentication, authorization, or role-based access logic
+- Do NOT alter dashboards, marketplace, explorer, admin, buyer, or verifier workflows beyond displaying the GIS result
+- Do NOT refactor or rewrite unrelated components
+- Do NOT break or replace existing manual fallback behavior unless explicitly necessary
+- Do NOT change database schema unless absolutely required for storing GIS output
+- Preserve all existing UI, logic, and behavior outside the Farmer land form exactly as-is
+
+Allowed changes:
+- Modify only the Farmer (Contributor) land registration form and its immediate supporting logic
+- Add isolated GIS-related components or utilities if required
+- Wire GIS-calculated output into existing verification and review views
+- Use defensive handling so failures do not impact other flows
+
+Governance & Safety Rule:
+If any required change would impact other modules, roles, or system behavior:
+STOP and report the issue instead of making changes.
+
+Goal:
+Integrate a GIS-based land measurement system into the Farmer land registration flow and surface the calculated area to Verifiers, while keeping the rest of the project fully intact, stable, and production-safe.

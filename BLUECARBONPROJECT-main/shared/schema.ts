@@ -37,6 +37,7 @@ export const projects = pgTable("projects", {
   verifierId: varchar("verifier_id"),
   rejectionReason: text("rejection_reason"),
   submittedAt: timestamp("submitted_at").notNull(),
+  landBoundary: text("land_boundary"), // GIS polygon coordinates as JSON string [[lat,lng], ...]
 });
 
 export const insertProjectSchema = createInsertSchema(projects).omit({ 
