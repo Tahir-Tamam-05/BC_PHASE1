@@ -6,15 +6,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, Loader2, Calculator } from 'lucide-react';
-import { useState } from 'react';
+import { Upload, Loader2, Calculator, Map } from 'lucide-react';
+import { useState, lazy, Suspense } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/lib/auth-context';
 
+const GISLandMap = lazy(() => import('@/components/gis-land-map'));
+
 interface ProjectSubmissionFormProps {
   onSuccess: () => void;
+}
+
+interface LatLng {
+  lat: number;
+  lng: number;
 }
 
 export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps) {
@@ -23,6 +30,9 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [carbonEstimate, setCarbonEstimate] = useState<{ annualCO2: number; lifetimeCO2: number } | null>(null);
+  const [landBoundary, setLandBoundary] = useState<LatLng[]>([]);
+  const [gisArea, setGisArea] = useState<number>(0);
+  const [useManualArea, setUseManualArea] = useState(false);
 
   const form = useForm({
     resolver: zodResolver(projectSubmissionSchema),
@@ -37,9 +47,16 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
     },
   });
 
+  const handleBoundaryChange = (boundary: LatLng[], area: number) => {
+    setLandBoundary(boundary);
+    setGisArea(area);
+    if (area > 0) {
+      form.setValue('area', area);
+    }
+  };
+
   const submitMutation = useMutation({
     mutationFn: async (data: any) => {
-      // Create FormData for multipart upload
       const formData = new FormData();
       formData.append('name', data.name);
       formData.append('description', data.description);
@@ -47,7 +64,10 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
       formData.append('area', data.area.toString());
       formData.append('ecosystemType', data.ecosystemType);
       
-      // Add proof file if selected (optional)
+      if (landBoundary.length > 0) {
+        formData.append('landBoundary', JSON.stringify(landBoundary));
+      }
+      
       if (proofFile) {
         formData.append('proof', proofFile);
       }
@@ -56,7 +76,6 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
       return await res.json();
     },
     onSuccess: (data: any) => {
-      // Store carbon calculation results
       if (data.carbonCalculation) {
         setCarbonEstimate(data.carbonCalculation);
       }
@@ -69,6 +88,8 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
       });
       form.reset();
       setProofFile(null);
+      setLandBoundary([]);
+      setGisArea(0);
       onSuccess();
     },
     onError: (error: any) => {
@@ -81,6 +102,14 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
   });
 
   const onSubmit = (data: any) => {
+    if (!useManualArea && landBoundary.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Land boundary required',
+        description: 'Please draw your land boundary on the map or switch to manual area entry',
+      });
+      return;
+    }
     submitMutation.mutate(data);
   };
 
@@ -136,44 +165,78 @@ export function ProjectSubmissionForm({ onSuccess }: ProjectSubmissionFormProps)
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="area">Area (hectares) *</Label>
-          <Input
-            id="area"
-            type="number"
-            step="0.01"
-            min="0"
-            {...form.register('area', { valueAsNumber: true })}
-            placeholder="100"
-            data-testid="input-area"
-          />
-          {form.formState.errors.area && (
-            <p className="text-sm text-destructive">{form.formState.errors.area.message}</p>
-          )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="flex items-center gap-2">
+            <Map className="w-4 h-4" />
+            Land Area Measurement *
+          </Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setUseManualArea(!useManualArea)}
+          >
+            {useManualArea ? 'Use Map Drawing' : 'Enter Manually'}
+          </Button>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="ecosystemType">Ecosystem Type *</Label>
-          <Select 
-            value={form.watch('ecosystemType')}
-            onValueChange={(value) => form.setValue('ecosystemType', value as any)}
-          >
-            <SelectTrigger id="ecosystemType" data-testid="select-ecosystem-type">
-              <SelectValue placeholder="Select ecosystem" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Mangrove" data-testid="option-mangrove">Mangrove (8.0 t/ha/yr)</SelectItem>
-              <SelectItem value="Seagrass" data-testid="option-seagrass">Seagrass (5.5 t/ha/yr)</SelectItem>
-              <SelectItem value="Salt Marsh" data-testid="option-salt-marsh">Salt Marsh (4.5 t/ha/yr)</SelectItem>
-              <SelectItem value="Coastal" data-testid="option-coastal">Coastal (3.5 t/ha/yr)</SelectItem>
-              <SelectItem value="Other" data-testid="option-other">Other (2.0 t/ha/yr)</SelectItem>
-            </SelectContent>
-          </Select>
-          {form.formState.errors.ecosystemType && (
-            <p className="text-sm text-destructive">{form.formState.errors.ecosystemType.message}</p>
-          )}
-        </div>
+        {useManualArea ? (
+          <div className="space-y-2">
+            <Input
+              id="area"
+              type="number"
+              step="0.01"
+              min="0"
+              {...form.register('area', { valueAsNumber: true })}
+              placeholder="Enter area in hectares"
+              data-testid="input-area"
+            />
+            {form.formState.errors.area && (
+              <p className="text-sm text-destructive">{form.formState.errors.area.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              For accurate measurements, we recommend using the map drawing tool
+            </p>
+          </div>
+        ) : (
+          <Suspense fallback={
+            <div className="h-[400px] flex items-center justify-center border rounded-lg bg-muted/50">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          }>
+            <GISLandMap
+              onBoundaryChange={handleBoundaryChange}
+              readOnly={false}
+            />
+          </Suspense>
+        )}
+
+        {!useManualArea && gisArea > 0 && (
+          <input type="hidden" {...form.register('area', { valueAsNumber: true })} value={gisArea} />
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="ecosystemType">Ecosystem Type *</Label>
+        <Select 
+          value={form.watch('ecosystemType')}
+          onValueChange={(value) => form.setValue('ecosystemType', value as any)}
+        >
+          <SelectTrigger id="ecosystemType" data-testid="select-ecosystem-type">
+            <SelectValue placeholder="Select ecosystem" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Mangrove" data-testid="option-mangrove">Mangrove (8.0 t/ha/yr)</SelectItem>
+            <SelectItem value="Seagrass" data-testid="option-seagrass">Seagrass (5.5 t/ha/yr)</SelectItem>
+            <SelectItem value="Salt Marsh" data-testid="option-salt-marsh">Salt Marsh (4.5 t/ha/yr)</SelectItem>
+            <SelectItem value="Coastal" data-testid="option-coastal">Coastal (3.5 t/ha/yr)</SelectItem>
+            <SelectItem value="Other" data-testid="option-other">Other (2.0 t/ha/yr)</SelectItem>
+          </SelectContent>
+        </Select>
+        {form.formState.errors.ecosystemType && (
+          <p className="text-sm text-destructive">{form.formState.errors.ecosystemType.message}</p>
+        )}
       </div>
 
       <div className="bg-muted/50 rounded-lg p-4 space-y-2">

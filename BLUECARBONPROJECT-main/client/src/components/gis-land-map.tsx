@@ -64,7 +64,7 @@ function FitBoundsToPolygon({ boundary }: { boundary: LatLng[] }) {
   return null;
 }
 
-export function GISLandMap({ onBoundaryChange, initialBoundary, readOnly = false, className = '' }: GISLandMapProps) {
+export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly = false, className = '' }: GISLandMapProps) {
   const [boundary, setBoundary] = useState<LatLng[]>(initialBoundary || []);
   const [area, setArea] = useState<number>(0);
   const featureGroupRef = useRef<L.FeatureGroup>(null);

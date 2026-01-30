@@ -108,6 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ecosystemType: req.body.ecosystemType,
         userId: req.user.id, // Use authenticated user's ID
         proofFileUrl: null as string | null,
+        landBoundary: req.body.landBoundary || null, // GIS polygon coordinates
       };
 
       // Validate project data
@@ -170,6 +171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         annualCO2,
         lifetimeCO2,
         co2Captured: lifetimeCO2, // Legacy field, same as lifetime
+        landBoundary: projectData.landBoundary, // GIS polygon data
       };
       
       const project = await storage.createProject(projectWithCarbon);
