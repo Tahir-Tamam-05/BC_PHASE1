@@ -3,7 +3,6 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet-draw';
-import '../leaflet-draw.d';
 import { Button } from '@/components/ui/button';
 import { MapPin, Trash2, Info, PenTool } from 'lucide-react';
 
@@ -58,7 +57,7 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const drawnLayerRef = useRef<L.FeatureGroup | null>(null);
-  const drawControlRef = useRef<L.Control.Draw | null>(null);
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
     if (initialBoundary && initialBoundary.length > 0) {
@@ -69,7 +68,8 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
   }, [initialBoundary]);
 
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+    if (!mapContainerRef.current || isInitializedRef.current) return;
+    isInitializedRef.current = true;
 
     const map = L.map(mapContainerRef.current, {
       center: [0, 0],
@@ -87,7 +87,7 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
     mapRef.current = map;
 
     if (!readOnly) {
-      const drawControl = new L.Control.Draw({
+      const drawControl = new (L.Control as any).Draw({
         position: 'topright',
         draw: {
           polygon: {
@@ -109,16 +109,11 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
           marker: false,
           polyline: false,
         },
-        edit: {
-          featureGroup: drawnItems,
-          edit: true,
-          remove: true,
-        },
+        edit: false,
       });
       map.addControl(drawControl);
-      drawControlRef.current = drawControl;
 
-      map.on(L.Draw.Event.CREATED, (e: any) => {
+      map.on((L as any).Draw.Event.CREATED, (e: any) => {
         const layer = e.layer;
         drawnItems.clearLayers();
         drawnItems.addLayer(layer);
@@ -133,59 +128,35 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
         setIsDrawing(false);
       });
 
-      map.on(L.Draw.Event.EDITED, (e: any) => {
-        const layers = e.layers;
-        layers.eachLayer((layer: any) => {
-          const latLngs = layer.getLatLngs()[0] as L.LatLng[];
-          const coords = latLngs.map((ll: L.LatLng) => ({ lat: ll.lat, lng: ll.lng }));
-          
-          setBoundary(coords);
-          const calculatedArea = calculatePolygonArea(coords);
-          setArea(calculatedArea);
-          onBoundaryChange(coords, calculatedArea);
-        });
-      });
-
-      map.on(L.Draw.Event.DELETED, () => {
-        setBoundary([]);
-        setArea(0);
-        onBoundaryChange([], 0);
-      });
-
-      map.on(L.Draw.Event.DRAWSTART, () => {
+      map.on((L as any).Draw.Event.DRAWSTART, () => {
         setIsDrawing(true);
       });
 
-      map.on(L.Draw.Event.DRAWSTOP, () => {
+      map.on((L as any).Draw.Event.DRAWSTOP, () => {
         setIsDrawing(false);
       });
     }
 
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-  }, [readOnly, onBoundaryChange]);
-
-  useEffect(() => {
-    if (!mapRef.current || !drawnLayerRef.current) return;
-
-    drawnLayerRef.current.clearLayers();
-
-    if (boundary.length > 0) {
-      const latLngs = boundary.map(p => [p.lat, p.lng] as [number, number]);
+    if (initialBoundary && initialBoundary.length > 0) {
+      const latLngs = initialBoundary.map(p => [p.lat, p.lng] as [number, number]);
       const polygon = L.polygon(latLngs, {
         color: '#10b981',
         fillColor: '#10b981',
         fillOpacity: 0.3,
         weight: 2,
       });
-      drawnLayerRef.current.addLayer(polygon);
+      drawnItems.addLayer(polygon);
       
       const bounds = L.latLngBounds(latLngs);
-      mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [boundary]);
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      isInitializedRef.current = false;
+    };
+  }, [readOnly, onBoundaryChange, initialBoundary]);
 
   const clearBoundary = useCallback(() => {
     if (drawnLayerRef.current) {
@@ -206,7 +177,7 @@ export default function GISLandMap({ onBoundaryChange, initialBoundary, readOnly
         {!readOnly && boundary.length > 0 && (
           <Button type="button" variant="outline" size="sm" onClick={clearBoundary}>
             <Trash2 className="w-4 h-4 mr-1" />
-            Clear
+            Clear & Redraw
           </Button>
         )}
       </div>
