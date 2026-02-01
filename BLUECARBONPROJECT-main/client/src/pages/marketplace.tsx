@@ -100,6 +100,22 @@ export default function Marketplace() {
           </div>
         </div>
 
+        {/* Voluntary Credit Disclaimer - PRD Requirement */}
+        <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+          <div className="flex gap-3">
+            <Leaf className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-blue-900 dark:text-blue-100">
+                Voluntary Carbon Credits
+              </p>
+              <p className="text-blue-700 dark:text-blue-300 mt-1">
+                Credits on this platform are voluntary digital representations for ESG and sustainability reporting. 
+                Upon purchase, credits are permanently retired and cannot be resold or reused.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatsCard
             title="My Credits Purchased"
@@ -343,6 +359,13 @@ export default function Marketplace() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Maximum: {(selectedProject.creditsEarned || 0).toFixed(2)} tons
+                </p>
+              </div>
+
+              {/* Retirement Notice - PRD Requirement */}
+              <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  <strong>Permanent Retirement:</strong> Upon purchase, these credits will be permanently retired and recorded in the immutable audit ledger. They cannot be resold or reused.
                 </p>
               </div>
             </div>

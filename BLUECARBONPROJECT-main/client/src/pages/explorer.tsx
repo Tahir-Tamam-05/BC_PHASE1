@@ -118,6 +118,12 @@ export default function Explorer() {
                 ))}
               </div>
             )}
+            
+            {searchQuery && filteredTransactions.length === 0 && (
+              <div className="mt-6 p-4 rounded-lg border bg-muted/30 text-center">
+                <p className="text-muted-foreground">No transactions match your search</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
