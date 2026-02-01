@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X } from 'lucide-react';
+import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X, FileText } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { SubtleOceanBackground } from '@/components/ocean-background';
 import { useAuth } from '@/lib/auth-context';
@@ -13,6 +13,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { generateCertificatePDF, prepareCertificateData } from '@/components/certificate-generator';
 import type { Project, CreditTransaction } from '@shared/schema';
 
 export default function Marketplace() {
@@ -85,6 +86,16 @@ export default function Marketplace() {
       contributorId: selectedProject.userId,
       projectId: selectedProject.id, 
       credits 
+    });
+  };
+
+  const handleDownloadCertificate = (purchase: any) => {
+    if (!user) return;
+    const certData = prepareCertificateData(purchase, user.name || 'Buyer');
+    generateCertificatePDF(certData);
+    toast({
+      title: 'Certificate Downloaded',
+      description: 'Your carbon offset certificate has been generated.',
     });
   };
 
@@ -291,6 +302,7 @@ export default function Marketplace() {
                       <th className="pb-3 font-medium">Contributor</th>
                       <th className="pb-3 font-medium">Credits</th>
                       <th className="pb-3 font-medium">Date</th>
+                      <th className="pb-3 font-medium">Certificate</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -310,6 +322,18 @@ export default function Marketplace() {
                         </td>
                         <td className="py-3 text-primary font-medium">{tx.credits.toFixed(2)} tons</td>
                         <td className="py-3 text-sm text-muted-foreground">{format(new Date(tx.timestamp), 'MMM d, yyyy')}</td>
+                        <td className="py-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownloadCertificate(tx)}
+                            className="flex items-center gap-1"
+                            data-testid={`btn-certificate-${tx.id}`}
+                          >
+                            <FileText className="w-4 h-4" />
+                            Download
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -524,7 +524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const transactions = await storage.getCreditTransactionsByBuyerId(req.user.id);
       
-      // Enrich transactions with contributor and project details
+      // Enrich transactions with contributor and project details for certificate generation
       const enriched = await Promise.all(
         transactions.map(async (tx) => {
           const contributor = await storage.getUser(tx.contributorId);
@@ -533,6 +533,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ...tx,
             contributorName: contributor?.name || 'Unknown',
             projectName: project?.name || 'Unknown',
+            projectLocation: project?.location || 'Unknown Location',
+            ecosystemType: project?.ecosystemType || 'Blue Carbon',
+            projectArea: project?.area || 0,
+            annualCO2: project?.annualCO2 || 0,
           };
         })
       );
