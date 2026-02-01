@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X, FileText } from 'lucide-react';
+import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X, FileText, Eye } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { SubtleOceanBackground } from '@/components/ocean-background';
 import { useAuth } from '@/lib/auth-context';
@@ -21,6 +21,7 @@ export default function Marketplace() {
   const { toast } = useToast();
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [purchaseAmount, setPurchaseAmount] = useState('');
+  const [previewCertificate, setPreviewCertificate] = useState<any>(null);
   
   // Filter state
   const [creditsMin, setCreditsMin] = useState('');
@@ -323,16 +324,28 @@ export default function Marketplace() {
                         <td className="py-3 text-primary font-medium">{tx.credits.toFixed(2)} tons</td>
                         <td className="py-3 text-sm text-muted-foreground">{format(new Date(tx.timestamp), 'MMM d, yyyy')}</td>
                         <td className="py-3">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDownloadCertificate(tx)}
-                            className="flex items-center gap-1"
-                            data-testid={`btn-certificate-${tx.id}`}
-                          >
-                            <FileText className="w-4 h-4" />
-                            Download
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setPreviewCertificate(tx)}
+                              className="flex items-center gap-1"
+                              data-testid={`btn-view-certificate-${tx.id}`}
+                            >
+                              <Eye className="w-4 h-4" />
+                              View
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadCertificate(tx)}
+                              className="flex items-center gap-1"
+                              data-testid={`btn-certificate-${tx.id}`}
+                            >
+                              <Download className="w-4 h-4" />
+                              Download
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -404,6 +417,142 @@ export default function Marketplace() {
                 data-testid="button-confirm-purchase"
               >
                 {purchaseMutation.isPending ? 'Processing...' : 'Confirm Purchase'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {previewCertificate && (
+        <Dialog open={!!previewCertificate} onOpenChange={() => setPreviewCertificate(null)}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Carbon Offset Certificate Preview
+              </DialogTitle>
+              <DialogDescription>Review your certificate before downloading</DialogDescription>
+            </DialogHeader>
+            
+            {(() => {
+              const certData = prepareCertificateData(previewCertificate, user?.name || 'Buyer');
+              return (
+                <div className="space-y-4 py-4 text-sm">
+                  <div className="bg-primary/10 p-4 rounded-lg text-center">
+                    <h2 className="text-lg font-bold text-primary">BlueCarbon Ledger</h2>
+                    <p className="text-xs text-muted-foreground">Verified Nature-Based Carbon Credit Platform</p>
+                    <h3 className="text-xl font-bold mt-3">CARBON OFFSET CERTIFICATE</h3>
+                    <p className="text-xs text-muted-foreground">(Voluntary Carbon Offset)</p>
+                  </div>
+
+                  <div className="flex justify-between text-xs text-muted-foreground border-b pb-2">
+                    <span>Certificate ID: {certData.certificateId}</span>
+                    <span>Issued On: {format(certData.issuedDate, 'dd MMMM yyyy')}</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-primary text-primary-foreground px-3 py-1 rounded text-xs font-medium">
+                      1. Certificate Holder
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 px-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Issued To (Buyer)</p>
+                        <p className="font-medium">{certData.buyerName}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Purpose of Offset</p>
+                        <p className="font-medium">Voluntary offset for ESG and sustainability reporting</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-primary text-primary-foreground px-3 py-1 rounded text-xs font-medium">
+                      2. Offset Details
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 px-2 bg-muted/50 p-3 rounded">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total Credits Retired</p>
+                        <p className="font-medium text-primary">{certData.credits.toFixed(2)} tCO2e</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Credit Type</p>
+                        <p className="font-medium">Nature-Based (Blue Carbon)</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Credit Status</p>
+                        <p className="font-medium text-green-600">Retired</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Retirement Date</p>
+                        <p className="font-medium">{format(certData.retirementDate, 'dd MMMM yyyy')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-primary text-primary-foreground px-3 py-1 rounded text-xs font-medium">
+                      3. Project Information
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 px-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Project Name</p>
+                        <p className="font-medium">{certData.projectName}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ecosystem Type</p>
+                        <p className="font-medium">{certData.ecosystemType}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Project Location</p>
+                        <p className="font-medium">{certData.projectLocation}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Project Area</p>
+                        <p className="font-medium">{certData.projectArea.toFixed(2)} hectares</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-primary text-primary-foreground px-3 py-1 rounded text-xs font-medium">
+                      4. Traceability & Ledger Record
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 px-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ledger Transaction ID</p>
+                        <p className="font-mono text-xs">{certData.transactionId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ledger System</p>
+                        <p className="font-medium">BlueCarbon Ledger (Immutable)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 rounded text-xs">
+                    <p className="font-medium text-amber-800 dark:text-amber-200 mb-1">Important Disclaimer</p>
+                    <p className="text-amber-700 dark:text-amber-300">
+                      This certificate does not constitute compliance-market carbon credits. BlueCarbon Ledger operates as a technology platform and is not a government-recognized carbon registry.
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <DialogFooter className="flex gap-2">
+              <Button variant="outline" onClick={() => setPreviewCertificate(null)}>
+                Close
+              </Button>
+              <Button 
+                onClick={() => {
+                  handleDownloadCertificate(previewCertificate);
+                  setPreviewCertificate(null);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Download PDF
               </Button>
             </DialogFooter>
           </DialogContent>
