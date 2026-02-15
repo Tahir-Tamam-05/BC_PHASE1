@@ -14,9 +14,71 @@ import {
   generateValidatorSignature,
 } from "./blockchain";
 import { calculateCarbonSequestration } from "./carbonCalculation";
+// Fallback for turf if installation fails or package name is different
+let turf: any = null;
+try {
+  turf = require("@turf/turf");
+} catch (e) {
+  try {
+    turf = require("turf");
+  } catch (e2) {
+    console.warn("GIS libraries not found. Overlap detection will be disabled.");
+  }
+}
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
+
+// GIS Utility functions
+function isOverlapping(newCoords: number[][], existingProjects: any[]): string | null {
+  if (!turf) return null;
+  try {
+    if (!newCoords || newCoords.length < 3) return null;
+    
+    // Convert new coordinates to a Turf polygon
+    // Leaflet uses [lat, lng], Turf uses [lng, lat]
+    const newPolygon = turf.polygon([
+      [...newCoords.map(c => [c[1], c[0]]), [newCoords[0][1], newCoords[0][0]]]
+    ]);
+
+    for (const project of existingProjects) {
+      if (!project.landBoundary || project.status !== 'verified') continue;
+      
+      try {
+        const existingCoords = JSON.parse(project.landBoundary);
+        if (!existingCoords || existingCoords.length < 3) continue;
+        
+        const existingPolygon = turf.polygon([
+          [...existingCoords.map((c: any) => [c[1], c[0]]), [existingCoords[0][1], existingCoords[0][0]]]
+        ]);
+
+        if (turf.booleanIntersects(newPolygon, existingPolygon)) {
+          return project.name;
+        }
+      } catch (e) {
+        console.error("Error parsing existing boundary:", e);
+      }
+    }
+  } catch (e) {
+    console.error("Error in overlap detection:", e);
+  }
+  return null;
+}
+
+function calculateGisArea(coords: number[][]): number {
+  if (!turf) return 0;
+  try {
+    if (!coords || coords.length < 3) return 0;
+    const polygon = turf.polygon([
+      [...coords.map(c => [c[1], c[0]]), [coords[0][1], coords[0][0]]]
+    ]);
+    const areaSqMeters = turf.area(polygon);
+    return areaSqMeters / 10000; // Convert to hectares
+  } catch (e) {
+    console.error("Error calculating GIS area:", e);
+    return 0;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // AUTH ROUTES - Public
@@ -119,6 +181,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Validate project data
       const validated = projectSubmissionSchema.parse(projectData);
+
+      // Day 5: GIS Overlap Detection
+      if (projectData.landBoundary) {
+        try {
+          const newCoords = JSON.parse(projectData.landBoundary);
+          const allProjects = await storage.getAllProjects();
+          const overlappingProjectName = isOverlapping(newCoords, allProjects);
+          
+          if (overlappingProjectName) {
+            return res.status(400).json({ 
+              error: `GIS Overlap Detected: The selected area overlaps with an existing verified project ("${overlappingProjectName}"). Please adjust your boundaries.` 
+            });
+          }
+
+          // Day 6: GIS Area Cross-Validation
+          const calculatedArea = calculateGisArea(newCoords);
+          const declaredArea = validated.area;
+          const variance = Math.abs(calculatedArea - declaredArea) / declaredArea;
+
+          if (variance > 0.15) { // 15% threshold
+            console.warn(`GIS Area Variance Alert: Declared ${declaredArea}ha vs Calculated ${calculatedArea.toFixed(2)}ha`);
+            // We'll still allow submission but store the calculated area for the verifier
+            (validated as any).gisCalculatedArea = calculatedArea;
+          }
+        } catch (e) {
+          console.error("GIS validation error:", e);
+        }
+      }
 
       // Calculate carbon sequestration based on area, ecosystem, and location
       const { annualCO2, lifetimeCO2 } = calculateCarbonSequestration(
