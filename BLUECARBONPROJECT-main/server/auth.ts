@@ -2,16 +2,22 @@ import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import type { User } from '@shared/schema';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bluecarbon-dev-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error("JWT_SECRET environment variable is required in production");
+}
+
+const FINAL_JWT_SECRET = JWT_SECRET || 'bluecarbon-dev-secret-change-in-production';
 const JWT_EXPIRES_IN = '7d';
 
 export function generateToken(user: User): string {
   const { password, ...userWithoutPassword } = user;
-  return jwt.sign(userWithoutPassword, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(userWithoutPassword, FINAL_JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): User {
-  return jwt.verify(token, JWT_SECRET) as User;
+  return jwt.verify(token, FINAL_JWT_SECRET) as User;
 }
 
 export interface AuthRequest extends Request {

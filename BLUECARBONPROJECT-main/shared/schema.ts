@@ -137,8 +137,15 @@ export const projectSubmissionSchema = insertProjectSchema.extend({
 // Approval/Rejection schema
 export const projectReviewSchema = z.object({
   projectId: z.string(),
-  action: z.enum(['approve', 'reject']),
-  rejectionReason: z.string().optional(),
+  action: z.enum(['approve', 'reject', 'clarify']),
+  rejectionReason: z.enum([
+    'INSUFFICIENT_DOCUMENTATION',
+    'INVALID_GIS_BOUNDARY',
+    'MRV_INCOMPLETE',
+    'OWNERSHIP_UNCLEAR',
+    'OTHER'
+  ]).optional(),
+  comment: z.string().optional(),
 });
 export type ProjectReview = z.infer<typeof projectReviewSchema>;
 

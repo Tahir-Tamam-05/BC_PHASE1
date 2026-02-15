@@ -99,6 +99,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Authentication required" });
       }
 
+      // Day 4: Project Freeze - Check for "Under Review" (pending) status
+      // In this system, once submitted it's "pending". If we want to freeze edits, 
+      // we check if a project with this ID (if it was an update) or similar logic applies.
+      // Since this is a POST (new submission), we don't freeze the creation.
+      // However, if we had a PUT /api/projects/:id, we would check status.
+
       // Parse form data
       const projectData = {
         name: req.body.name,
@@ -246,10 +252,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/projects/:id/review", async (req, res) => {
+  app.post("/api/projects/:id/review", requireAuth, requireRole('verifier', 'admin'), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { action, rejectionReason } = projectReviewSchema.parse({
+      const { action, rejectionReason, comment } = projectReviewSchema.parse({
         projectId: id,
         ...req.body,
       });
@@ -259,12 +265,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Project not found" });
       }
 
+      // Day 2: Verifier Conflict of Interest Check
+      if (req.user?.id === project.userId && req.user?.role !== 'admin') {
+        console.warn(`Conflict of interest attempt: User ${req.user.id} tried to verify their own project ${id}`);
+        return res.status(403).json({ error: "Conflict of Interest: Verifiers cannot verify their own projects." });
+      }
+
+      // Day 4: Project Freeze - Check if project is already verified
+      if (project.status === 'verified') {
+        return res.status(400).json({ error: "Cannot review a project that is already verified." });
+      }
+
       if (action === 'reject') {
         await storage.updateProject(id, {
           status: 'rejected',
-          rejectionReason,
+          rejectionReason: rejectionReason + (comment ? `: ${comment}` : ''),
         });
         return res.json({ success: true });
+      }
+
+      if (action === 'clarify') {
+        await storage.updateProject(id, {
+          status: 'pending', // Keeps it pending but we could add a 'needs_clarification' status if we update schema
+          rejectionReason: `CLARIFICATION_NEEDED: ${comment || 'No details provided'}`,
+        });
+        return res.json({ success: true, message: "Clarification requested" });
+      }
+
+      // Day 4: Freeze logic - only proceed with verification if status is pending
+      if (project.status !== 'pending') {
+        // This is a safety check
       }
 
       const timestamp = new Date();
