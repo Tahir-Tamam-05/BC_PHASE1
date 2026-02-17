@@ -17,10 +17,10 @@ import { calculateCarbonSequestration } from "./carbonCalculation";
 // Fallback for turf if installation fails or package name is different
 let turf: any = null;
 try {
-  turf = require("@turf/turf");
+  turf = require("turf");
 } catch (e) {
   try {
-    turf = require("turf");
+    turf = require("@turf/turf");
   } catch (e2) {
     console.warn("GIS libraries not found. Overlap detection will be disabled.");
   }
@@ -195,15 +195,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
 
-          // Day 6: GIS Area Cross-Validation
+// Day 6: GIS Area Cross-Validation
           const calculatedArea = calculateGisArea(newCoords);
           const declaredArea = validated.area;
-          const variance = Math.abs(calculatedArea - declaredArea) / declaredArea;
+          const variance = Math.abs(calculatedArea - declaredArea) / (declaredArea || 1);
 
           if (variance > 0.15) { // 15% threshold
             console.warn(`GIS Area Variance Alert: Declared ${declaredArea}ha vs Calculated ${calculatedArea.toFixed(2)}ha`);
-            // We'll still allow submission but store the calculated area for the verifier
-            (validated as any).gisCalculatedArea = calculatedArea;
+            // Add a temporary flag to the project name or description to alert the verifier
+            if (req.body.description) {
+              projectData.description = `[GIS AREA VARIANCE: ${calculatedArea.toFixed(2)}ha] ${req.body.description}`;
+            }
           }
         } catch (e) {
           console.error("GIS validation error:", e);
