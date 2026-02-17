@@ -17,14 +17,31 @@ import { calculateCarbonSequestration } from "./carbonCalculation";
 // Fallback for turf if installation fails or package name is different
 let turf: any = null;
 try {
-  turf = require("turf");
+  // Try standard package name
+  turf = require("@turf/turf");
 } catch (e) {
   try {
-    turf = require("@turf/turf");
+    // Try legacy package name
+    turf = require("turf");
   } catch (e2) {
-    console.warn("GIS libraries not found. Overlap detection will be disabled.");
+    // Attempt dynamic import as fallback
+    import("@turf/turf").then(m => {
+      turf = m;
+      console.log("✅ GIS: turf loaded via dynamic import");
+    }).catch(err => {
+      console.warn("⚠️ GIS libraries not found. Overlap detection will be disabled.");
+    });
   }
 }
+
+// Log GIS status on startup (delayed to allow dynamic import to finish if it's fast)
+setTimeout(() => {
+  if (turf) {
+    console.log("✅ GIS: turf library is active");
+  } else {
+    console.warn("❌ GIS: turf library failed to initialize");
+  }
+}, 1000);
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
