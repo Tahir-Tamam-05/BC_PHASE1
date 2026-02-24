@@ -235,7 +235,8 @@ export default function Login() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password (min 8 characters)</Label>
+                    {/* Task 1.4: Password complexity requirements shown to user */}
+                    <Label htmlFor="signup-password">Password</Label>
                     <Input
                       id="signup-password"
                       type="password"
@@ -243,6 +244,9 @@ export default function Login() {
                       data-testid="input-signup-password"
                       placeholder="••••••••"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Min 8 characters · 1 uppercase · 1 lowercase · 1 number · 1 special character
+                    </p>
                     {signupForm.formState.errors.password && (
                       <p className="text-sm text-destructive">{signupForm.formState.errors.password.message}</p>
                     )}

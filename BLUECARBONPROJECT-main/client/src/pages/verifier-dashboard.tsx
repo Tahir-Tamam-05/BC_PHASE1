@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, CheckCircle, XCircle, Layers, FileCheck, Map, Loader2 } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Layers, FileCheck, Map, Loader2, MessageSquare } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
@@ -10,9 +10,21 @@ import { useState, lazy, Suspense } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/lib/auth-context';
+import type { Project, Block } from "@shared/schema";
+
+// Task 2.1: Standardized rejection reason codes (mirrors server schema)
+const REJECTION_REASON_CODES = [
+  { value: 'INSUFFICIENT_DOCUMENTATION', label: 'Insufficient Documentation' },
+  { value: 'INVALID_GIS_BOUNDARY', label: 'Invalid GIS Boundary' },
+  { value: 'MRV_INCOMPLETE', label: 'MRV Data Incomplete' },
+  { value: 'OWNERSHIP_UNCLEAR', label: 'Ownership Unclear' },
+  { value: 'OTHER', label: 'Other (specify in comment)' },
+] as const;
+
 
 const GISLandMap = lazy(() => import('@/components/gis-land-map'));
 
@@ -20,37 +32,59 @@ export default function VerifierDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [selectedProject, setSelectedProject] = useState<any>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
+  // Task 2.1: Separate state for rejection reason code and free-text comment
+  const [rejectionReasonCode, setRejectionReasonCode] = useState('');
+  const [rejectionComment, setRejectionComment] = useState('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
+  // Task 2.1: Clarification dialog state
+  const [showClarifyDialog, setShowClarifyDialog] = useState(false);
+  const [clarificationNote, setClarificationNote] = useState('');
 
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ['/api/projects/pending'],
   });
 
-  const { data: myReviews = [] } = useQuery({
+  const { data: myReviews = [] } = useQuery<Project[]>({
     queryKey: ['/api/projects/my-reviews'],
     enabled: !!user?.id,
   });
 
-  const { data: blocks = [] } = useQuery({
+  const { data: blocks = [] } = useQuery<Block[]>({
     queryKey: ['/api/blocks'],
   });
 
+
   const reviewMutation = useMutation({
-    mutationFn: ({ projectId, action, rejectionReason }: any) =>
-      apiRequest('POST', `/api/projects/${projectId}/review`, { action, rejectionReason }),
-    onSuccess: (data, variables) => {
+    mutationFn: ({ projectId, action, rejectionReason, comment, clarificationNote }: any) =>
+      apiRequest('POST', `/api/projects/${projectId}/review`, {
+        action,
+        rejectionReason,
+        comment,
+        clarificationNote,
+      }),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects/pending'] });
       queryClient.invalidateQueries({ queryKey: ['/api/projects/my-reviews'] });
       queryClient.invalidateQueries({ queryKey: ['/api/blocks'] });
       setSelectedProject(null);
       setShowRejectDialog(false);
-      setRejectionReason('');
+      setShowClarifyDialog(false);
+      setRejectionReasonCode('');
+      setRejectionComment('');
+      setClarificationNote('');
+      const actionLabels: Record<string, { title: string; description: string }> = {
+        approve: { title: 'Project approved!', description: 'Transaction created and added to blockchain' },
+        reject: { title: 'Project rejected', description: 'The contributor has been notified' },
+        clarify: { title: 'Clarification requested', description: 'The contributor has been asked to provide more information' },
+      };
+      const label = actionLabels[variables.action] ?? { title: 'Done', description: '' };
+      toast({ title: label.title, description: label.description });
+    },
+    onError: (error: any) => {
       toast({
-        title: variables.action === 'approve' ? 'Project approved!' : 'Project rejected',
-        description: variables.action === 'approve'
-          ? 'Transaction created and added to blockchain'
-          : 'Project has been rejected',
+        variant: 'destructive',
+        title: 'Action failed',
+        description: error?.message || 'Could not complete the review action',
       });
     },
   });
@@ -60,18 +94,36 @@ export default function VerifierDashboard() {
   };
 
   const handleReject = () => {
-    if (!selectedProject || !rejectionReason.trim()) {
+    if (!selectedProject || !rejectionReasonCode) {
       toast({
         variant: 'destructive',
         title: 'Rejection reason required',
-        description: 'Please provide a reason for rejection',
+        description: 'Please select a rejection reason code',
       });
       return;
     }
     reviewMutation.mutate({
       projectId: selectedProject.id,
       action: 'reject',
-      rejectionReason,
+      rejectionReason: rejectionReasonCode,
+      comment: rejectionComment || undefined,
+    });
+  };
+
+  // Task 2.1: Handle clarification request
+  const handleClarify = () => {
+    if (!selectedProject || clarificationNote.trim().length < 10) {
+      toast({
+        variant: 'destructive',
+        title: 'Clarification note required',
+        description: 'Please provide at least 10 characters explaining what needs clarification',
+      });
+      return;
+    }
+    reviewMutation.mutate({
+      projectId: selectedProject.id,
+      action: 'clarify',
+      clarificationNote,
     });
   };
 
@@ -176,6 +228,20 @@ export default function VerifierDashboard() {
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
                           Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400"
+                          onClick={() => {
+                            setSelectedProject(project);
+                            setShowClarifyDialog(true);
+                          }}
+                          disabled={reviewMutation.isPending}
+                          data-testid={`button-clarify-${project.id}`}
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          Clarify
                         </Button>
                         <Button
                           variant="destructive"
@@ -304,7 +370,7 @@ export default function VerifierDashboard() {
                               return [];
                             }
                           })()}
-                          onBoundaryChange={() => {}}
+                          onBoundaryChange={() => { }}
                           readOnly={true}
                         />
                       </Suspense>
@@ -338,24 +404,43 @@ export default function VerifierDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Task 2.1: Rejection Dialog with standardized reason codes */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Project</DialogTitle>
             <DialogDescription>
-              Please provide a reason for rejecting this project
+              Select a standardized rejection reason code and optionally add a comment.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="rejection-reason">Rejection Reason *</Label>
+              <Label htmlFor="rejection-reason-code">Rejection Reason Code *</Label>
+              <Select
+                value={rejectionReasonCode}
+                onValueChange={setRejectionReasonCode}
+              >
+                <SelectTrigger id="rejection-reason-code" data-testid="select-rejection-reason">
+                  <SelectValue placeholder="Select a reason code..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASON_CODES.map((code) => (
+                    <SelectItem key={code.value} value={code.value}>
+                      {code.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rejection-comment">Additional Comment (optional)</Label>
               <Textarea
-                id="rejection-reason"
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Provide detailed feedback about why this project cannot be verified..."
-                rows={4}
-                data-testid="input-rejection-reason"
+                id="rejection-comment"
+                value={rejectionComment}
+                onChange={(e) => setRejectionComment(e.target.value)}
+                placeholder="Provide additional context for the contributor..."
+                rows={3}
+                data-testid="input-rejection-comment"
               />
             </div>
           </div>
@@ -366,10 +451,55 @@ export default function VerifierDashboard() {
             <Button
               variant="destructive"
               onClick={handleReject}
-              disabled={reviewMutation.isPending || !rejectionReason.trim()}
+              disabled={reviewMutation.isPending || !rejectionReasonCode}
               data-testid="button-confirm-reject"
             >
-              Confirm Rejection
+              {reviewMutation.isPending ? 'Rejecting...' : 'Confirm Rejection'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task 2.1: Clarification Request Dialog */}
+      <Dialog open={showClarifyDialog} onOpenChange={setShowClarifyDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-blue-500" />
+              Request Clarification
+            </DialogTitle>
+            <DialogDescription>
+              Ask the contributor to provide additional information before you can make a decision.
+              The project status will change to "Needs Clarification".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="clarification-note">Clarification Note *</Label>
+              <Textarea
+                id="clarification-note"
+                value={clarificationNote}
+                onChange={(e) => setClarificationNote(e.target.value)}
+                placeholder="Describe exactly what information or documentation is needed from the contributor..."
+                rows={4}
+                data-testid="input-clarification-note"
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum 10 characters. Be specific so the contributor knows exactly what to provide.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClarifyDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleClarify}
+              disabled={reviewMutation.isPending || clarificationNote.trim().length < 10}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              data-testid="button-confirm-clarify"
+            >
+              {reviewMutation.isPending ? 'Sending...' : 'Request Clarification'}
             </Button>
           </DialogFooter>
         </DialogContent>

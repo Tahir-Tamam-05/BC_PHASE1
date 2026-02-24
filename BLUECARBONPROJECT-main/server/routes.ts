@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
-import { loginSchema, signupSchema, projectReviewSchema, projectSubmissionSchema, creditPurchaseSchema } from "@shared/schema";
+import { loginSchema, signupSchema, projectReviewSchema, projectSubmissionSchema, creditPurchaseSchema, AUDIT_ACTION_TYPES } from "@shared/schema";
 import { generateToken, requireAuth, requireRole, type AuthRequest } from "./auth";
 import {
   computeTransactionId,
@@ -13,28 +13,27 @@ import {
   computeBlockHash,
   generateValidatorSignature,
 } from "./blockchain";
+import { sha256 } from "js-sha256";
 import { calculateCarbonSequestration } from "./carbonCalculation";
-// Fallback for turf if installation fails or package name is different
+import { audit } from "./auditLog";
+
+// ─── Fallback for turf ────────────────────────────────────────────────────────
 let turf: any = null;
 try {
-  // Try standard package name
   turf = require("@turf/turf");
 } catch (e) {
   try {
-    // Try legacy package name
     turf = require("turf");
   } catch (e2) {
-    // Attempt dynamic import as fallback
     import("@turf/turf").then(m => {
       turf = m;
       console.log("✅ GIS: turf loaded via dynamic import");
-    }).catch(err => {
+    }).catch(() => {
       console.warn("⚠️ GIS libraries not found. Overlap detection will be disabled.");
     });
   }
 }
 
-// Log GIS status on startup (delayed to allow dynamic import to finish if it's fast)
 setTimeout(() => {
   if (turf) {
     console.log("✅ GIS: turf library is active");
@@ -43,8 +42,91 @@ setTimeout(() => {
   }
 }, 1000);
 
-// Configure multer for file uploads (memory storage)
+// ─── Configure multer ─────────────────────────────────────────────────────────
 const upload = multer({ storage: multer.memoryStorage() });
+
+// ─── Account Lockout Store (Task 1.1) ─────────────────────────────────────────
+// In-memory store: email → { count, lockedUntil }
+// This is intentionally in-memory so it resets on server restart (acceptable for
+// a single-instance deployment; replace with Redis for multi-instance).
+interface LockoutEntry {
+  count: number;
+  lockedUntil: number | null; // Unix timestamp ms, null = not locked
+}
+
+const loginAttempts = new Map<string, LockoutEntry>();
+
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+function getLoginAttempts(email: string): LockoutEntry {
+  return loginAttempts.get(email) ?? { count: 0, lockedUntil: null };
+}
+
+function recordFailedAttempt(email: string): LockoutEntry {
+  const entry = getLoginAttempts(email);
+  const newCount = entry.count + 1;
+  const lockedUntil =
+    newCount >= MAX_FAILED_ATTEMPTS ? Date.now() + LOCKOUT_DURATION_MS : null;
+  const updated: LockoutEntry = { count: newCount, lockedUntil };
+  loginAttempts.set(email, updated);
+  return updated;
+}
+
+function resetLoginAttempts(email: string): void {
+  loginAttempts.delete(email);
+}
+
+function isAccountLocked(email: string): { locked: boolean; remainingMs: number } {
+  const entry = getLoginAttempts(email);
+  if (!entry.lockedUntil) return { locked: false, remainingMs: 0 };
+  const remaining = entry.lockedUntil - Date.now();
+  if (remaining <= 0) {
+    // Lock has expired — reset
+    loginAttempts.delete(email);
+    return { locked: false, remainingMs: 0 };
+  }
+  return { locked: true, remainingMs: remaining };
+}
+
+// ─── In-Memory Cache (Task 7.3) ───────────────────────────────────────────────
+// Simple TTL cache for high-traffic read endpoints.
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+class SimpleCache {
+  private store = new Map<string, CacheEntry<any>>();
+
+  get<T>(key: string): T | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.data as T;
+  }
+
+  set<T>(key: string, data: T, ttlMs: number): void {
+    this.store.set(key, { data, expiresAt: Date.now() + ttlMs });
+  }
+
+  invalidate(key: string): void {
+    this.store.delete(key);
+  }
+
+  invalidatePattern(prefix: string): void {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) this.store.delete(key);
+    }
+  }
+}
+
+const cache = new SimpleCache();
+const CACHE_TTL_MARKETPLACE = 60 * 1000;  // 60 seconds
+const CACHE_TTL_STATS = 5 * 60 * 1000;    // 5 minutes
 
 // GIS Utility functions
 function isOverlapping(newCoords: number[][], existingProjects: any[]): string | null {
@@ -98,30 +180,116 @@ function calculateGisArea(coords: number[][]): number {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // AUTH ROUTES - Public
+
+  // ─── HEALTH CHECK (Task 5.2) ────────────────────────────────────────────────
+  app.get("/health", async (_req, res) => {
+    try {
+      // Verify DB connectivity by running a lightweight query
+      await storage.getAllBlocks();
+      return res.json({
+        status: "ok",
+        db: "connected",
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "development",
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        status: "degraded",
+        db: "error",
+        error: err.message,
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // ─── AUTH ROUTES - Public ───────────────────────────────────────────────────
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = loginSchema.parse(req.body);
+      const ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+
+      // ── Account Lockout Check (Task 1.1) ──────────────────────────────────
+      const lockStatus = isAccountLocked(email);
+      if (lockStatus.locked) {
+        const remainingMinutes = Math.ceil(lockStatus.remainingMs / 60000);
+        // Audit: account was locked when login was attempted
+        await audit({
+          userId: null,
+          actionType: AUDIT_ACTION_TYPES.ACCOUNT_LOCKED,
+          entityType: "user",
+          entityId: null,
+          metadata: { email, ip, remainingMs: lockStatus.remainingMs },
+        });
+        return res.status(429).json({
+          error: `Account temporarily locked due to too many failed login attempts. Try again in ${remainingMinutes} minute(s).`,
+          lockedFor: lockStatus.remainingMs,
+        });
+      }
+
       const user = await storage.getUserByEmail(email);
-      
+
       if (!user) {
+        recordFailedAttempt(email);
+        // Audit: login failure (unknown email)
+        await audit({
+          userId: null,
+          actionType: AUDIT_ACTION_TYPES.LOGIN_FAILURE,
+          entityType: "user",
+          entityId: null,
+          metadata: { email, ip, reason: "user_not_found" },
+        });
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       // Compare hashed passwords
       const isValid = await bcrypt.compare(password, user.password);
       if (!isValid) {
-        return res.status(401).json({ error: "Invalid email or password" });
+        const attempt = recordFailedAttempt(email);
+        const remaining = MAX_FAILED_ATTEMPTS - attempt.count;
+        const isNowLocked = attempt.count >= MAX_FAILED_ATTEMPTS;
+        // Audit: login failure (wrong password) — also log if account just got locked
+        await audit({
+          userId: user.id,
+          actionType: isNowLocked
+            ? AUDIT_ACTION_TYPES.ACCOUNT_LOCKED
+            : AUDIT_ACTION_TYPES.LOGIN_FAILURE,
+          entityType: "user",
+          entityId: user.id,
+          metadata: {
+            ip,
+            failedAttempts: attempt.count,
+            reason: "invalid_password",
+            accountLocked: isNowLocked,
+          },
+        });
+        const message = isNowLocked
+          ? "Account locked for 15 minutes due to too many failed attempts."
+          : `Invalid email or password. ${remaining} attempt(s) remaining before lockout.`;
+        return res.status(401).json({ error: message });
       }
+
+      // Successful login — reset lockout counter
+      resetLoginAttempts(email);
+
+      // Audit: successful login
+      await audit({
+        userId: user.id,
+        actionType: AUDIT_ACTION_TYPES.LOGIN_SUCCESS,
+        entityType: "user",
+        entityId: user.id,
+        metadata: { ip, role: user.role },
+      });
 
       // Generate JWT token
       const token = generateToken(user);
       const { password: _, ...userWithoutPassword } = user;
-      
-      return res.json({ 
+
+      return res.json({
         message: "Login successful",
         token,
-        user: userWithoutPassword 
+        user: userWithoutPassword,
       });
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
@@ -132,40 +300,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const data = signupSchema.parse(req.body);
       const existing = await storage.getUserByEmail(data.email);
-      
+
       if (existing) {
         return res.status(400).json({ error: "Email already registered" });
       }
 
-      // Create user with hashed password (role defaults to 'user')
+      // Create user with hashed password
       const user = await storage.createUser(data);
       const token = generateToken(user);
       const { password: _, ...userWithoutPassword } = user;
-      
-      return res.json({ 
+
+      // Audit: new user signup
+      await audit({
+        userId: user.id,
+        actionType: AUDIT_ACTION_TYPES.SIGNUP,
+        entityType: "user",
+        entityId: user.id,
+        metadata: { role: user.role, ip: req.ip ?? "unknown" },
+      });
+
+      return res.json({
         message: "Account created successfully",
         token,
-        user: userWithoutPassword 
+        user: userWithoutPassword,
       });
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
     }
   });
 
-  app.get("/api/stats", async (req, res) => {
+  // ─── ROLE CHANGE ROUTE (ADMIN ONLY) ───────────────────────────────────────────
+  app.patch("/api/users/:id/role", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const { id } = req.params;
+      const { role } = req.body;
+
+      // Validate role
+      const allowedRoles = ['admin', 'verifier', 'contributor', 'buyer'];
+      if (!role || !allowedRoles.includes(role)) {
+        return res.status(400).json({ 
+          error: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}` 
+        });
+      }
+
+      // Get existing user
+      const existingUser = await storage.getUser(id);
+      if (!existingUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const oldRole = existingUser.role;
+
+      // Don't allow changing own role (prevent lockout)
+      if (id === req.user.id) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+
+      // Update user role
+      const updatedUser = await storage.updateUser(id, { role });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Failed to update user role" });
+      }
+
+      // Audit: role changed
+      await audit({
+        userId: req.user.id,
+        actionType: AUDIT_ACTION_TYPES.ROLE_CHANGED,
+        entityType: "user",
+        entityId: id,
+        metadata: {
+          targetUserEmail: existingUser.email,
+          oldRole,
+          newRole: role,
+        },
+      });
+
+      return res.json({ 
+        message: "Role updated successfully",
+        user: { ...updatedUser, password: undefined }
+      });
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/stats", async (_req, res) => {
+    try {
+      // ── Cached stats (Task 7.3) ──────────────────────────────────────────
+      const CACHE_KEY = "stats:global";
+      const cached = cache.get<object>(CACHE_KEY);
+      if (cached) return res.json(cached);
+
       const projects = await storage.getAllProjects();
       const totalProjects = projects.length;
-      const verifiedProjects = projects.filter(p => p.status === 'verified').length;
+      const verifiedProjects = projects.filter(p => p.status === "verified").length;
       const totalCO2Captured = projects
-        .filter(p => p.status === 'verified')
+        .filter(p => p.status === "verified")
         .reduce((sum, p) => sum + p.co2Captured, 0);
 
-      return res.json({
-        totalProjects,
-        verifiedProjects,
-        totalCO2Captured,
-      });
+      const result = { totalProjects, verifiedProjects, totalCO2Captured };
+      cache.set(CACHE_KEY, result, CACHE_TTL_STATS);
+      return res.json(result);
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -290,6 +529,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const project = await storage.createProject(projectWithCarbon);
+
+      // Audit: project submitted
+      await audit({
+        userId: req.user.id,
+        actionType: AUDIT_ACTION_TYPES.PROJECT_SUBMITTED,
+        entityType: "project",
+        entityId: project.id,
+        metadata: {
+          projectName: project.name,
+          ecosystemType: project.ecosystemType,
+          area: project.area,
+          lifetimeCO2: project.lifetimeCO2,
+        },
+      });
+
       return res.json({ 
         message: "Project submitted successfully",
         project,
@@ -353,18 +607,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const { verifierId } = req.body;
-      
+
       const updated = await storage.updateProject(id, { verifierId });
+
+      // Audit: verifier assigned to project
+      await audit({
+        userId: null, // Admin action — no auth middleware on this route currently
+        actionType: AUDIT_ACTION_TYPES.VERIFIER_ASSIGNED,
+        entityType: "project",
+        entityId: id,
+        metadata: { verifierId },
+      });
+
       return res.json(updated);
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
     }
   });
 
-  app.post("/api/projects/:id/review", requireAuth, requireRole('verifier', 'admin'), async (req: AuthRequest, res) => {
+  app.post("/api/projects/:id/review", requireAuth, requireRole("verifier", "admin"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { action, rejectionReason, comment } = projectReviewSchema.parse({
+      const { action, rejectionReason, comment, clarificationNote } = projectReviewSchema.parse({
         projectId: id,
         ...req.body,
       });
@@ -374,36 +638,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Day 2: Verifier Conflict of Interest Check
-      if (req.user?.id === project.userId && req.user?.role !== 'admin') {
-        console.warn(`Conflict of interest attempt: User ${req.user.id} tried to verify their own project ${id}`);
-        return res.status(403).json({ error: "Conflict of Interest: Verifiers cannot verify their own projects." });
-      }
-
-      // Day 4: Project Freeze - Check if project is already verified
-      if (project.status === 'verified') {
-        return res.status(400).json({ error: "Cannot review a project that is already verified." });
-      }
-
-      if (action === 'reject') {
-        await storage.updateProject(id, {
-          status: 'rejected',
-          rejectionReason: rejectionReason + (comment ? `: ${comment}` : ''),
+      // ── Verifier Conflict of Interest Check ──────────────────────────────
+      if (req.user?.id === project.userId && req.user?.role !== "admin") {
+        console.warn(
+          `COI attempt: User ${req.user.id} tried to verify their own project ${id}`
+        );
+        return res.status(403).json({
+          error: "Conflict of Interest: Verifiers cannot verify their own projects.",
         });
-        return res.json({ success: true });
       }
 
-      if (action === 'clarify') {
-        await storage.updateProject(id, {
-          status: 'pending', // Keeps it pending but we could add a 'needs_clarification' status if we update schema
-          rejectionReason: `CLARIFICATION_NEEDED: ${comment || 'No details provided'}`,
+      // ── Task 2.3: Project Freeze — block reviews on already-verified projects ──
+      if (project.status === "verified") {
+        return res.status(400).json({
+          error: "Cannot review a project that is already verified. Revoke verification first.",
         });
-        return res.json({ success: true, message: "Clarification requested" });
       }
 
-      // Day 4: Freeze logic - only proceed with verification if status is pending
-      if (project.status !== 'pending') {
-        // This is a safety check
+      // ── Reject action ─────────────────────────────────────────────────────
+      if (action === "reject") {
+        if (!rejectionReason) {
+          return res.status(400).json({
+            error: "A rejection reason code is required when rejecting a project.",
+          });
+        }
+        await storage.updateProject(id, {
+          status: "rejected",
+          rejectionReason: rejectionReason + (comment ? `: ${comment}` : ""),
+          clarificationNote: null,
+        });
+        // Audit: project rejected
+        await audit({
+          userId: req.user?.id,
+          actionType: AUDIT_ACTION_TYPES.PROJECT_REJECTED,
+          entityType: "project",
+          entityId: id,
+          metadata: {
+            projectName: project.name,
+            contributorId: project.userId,
+            rejectionReason,
+            comment: comment ?? null,
+          },
+        });
+        return res.json({ success: true, message: "Project rejected" });
+      }
+
+      // ── Task 2.1: Clarify action — uses dedicated needs_clarification status ──
+      if (action === "clarify") {
+        if (!clarificationNote) {
+          return res.status(400).json({
+            error: "A clarification note is required when requesting clarification.",
+          });
+        }
+        await storage.updateProject(id, {
+          status: "needs_clarification",
+          clarificationNote,
+          rejectionReason: null,
+        });
+        // Audit: clarification requested
+        await audit({
+          userId: req.user?.id,
+          actionType: AUDIT_ACTION_TYPES.PROJECT_CLARIFICATION_REQUESTED,
+          entityType: "project",
+          entityId: id,
+          metadata: {
+            projectName: project.name,
+            contributorId: project.userId,
+            clarificationNote,
+          },
+        });
+        return res.json({
+          success: true,
+          message: "Clarification requested. The contributor has been notified.",
+        });
+      }
+
+      // ── Task 2.3: Only allow approval if project is in a reviewable state ──
+      if (project.status !== "pending" && project.status !== "needs_clarification") {
+        return res.status(400).json({
+          error: `Cannot approve a project with status '${project.status}'.`,
+        });
       }
 
       const timestamp = new Date();
@@ -465,10 +779,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      await storage.updateProject(id, { 
-        status: 'verified',
-        creditsEarned: project.lifetimeCO2 // Set credits available for purchase
+      await storage.updateProject(id, {
+        status: "verified",
+        creditsEarned: project.lifetimeCO2, // Set credits available for purchase
       });
+
+      // Invalidate marketplace cache so buyers see the newly verified project
+      cache.invalidate("marketplace:verified-projects");
+      cache.invalidate("stats:global");
+
+      // Audit: project approved
+      await audit({
+        userId: req.user?.id,
+        actionType: AUDIT_ACTION_TYPES.PROJECT_APPROVED,
+        entityType: "project",
+        entityId: id,
+        metadata: {
+          projectName: project.name,
+          contributorId: project.userId,
+          creditsIssued: project.lifetimeCO2,
+          transactionId: transaction.txId,
+        },
+      });
+
       return res.json({ success: true, transaction });
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
@@ -496,14 +829,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
         co2Captured: project.co2Captured,
         status: project.status,
         submittedAt: project.submittedAt,
-        transactionId: tx?.txId || 'N/A',
-        blockHash: block?.blockHash || 'N/A',
+        transactionId: tx?.txId || "N/A",
+        blockHash: block?.blockHash || "N/A",
         blockIndex: block?.index,
         issuedAt: new Date().toISOString(),
         certificateId: `BC-${project.id}`,
       };
 
+      // Audit: certificate issued (accessed)
+      // Note: this endpoint is public — userId may be null for unauthenticated access
+      await audit({
+        userId: null,
+        actionType: AUDIT_ACTION_TYPES.CERTIFICATE_ISSUED,
+        entityType: "project",
+        entityId: id,
+        metadata: {
+          certificateId: certificate.certificateId,
+          projectName: project.name,
+          co2Captured: project.co2Captured,
+          transactionId: certificate.transactionId,
+        },
+      });
+
       return res.json(certificate);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── PUBLIC CERTIFICATE VERIFICATION ENDPOINT (Task 1.5) ───────────────────────
+  app.get("/verify/:certificateId", async (req, res) => {
+    try {
+      const { certificateId } = req.params;
+
+      // Parse certificate ID (format: BCL-YYYY-XXXXXX)
+      const certIdMatch = certificateId.match(/^BCL-(\d{4})-(\d+)$/);
+      if (!certIdMatch) {
+        return res.status(400).json({ 
+          error: "Invalid certificate ID format",
+          status: "Invalid" 
+        });
+      }
+
+      const year = parseInt(certIdMatch[1], 10);
+      const sequence = parseInt(certIdMatch[2], 10);
+
+      // Find credit transaction by reconstructing the ID from sequence
+      // The certificate ID format is BCL-{year}-{sequence} where sequence is derived from purchase.id
+      // We need to find the purchase by matching the sequence
+      const allTransactions = await storage.getAllCreditTransactions();
+      
+      let matchingTx: any = null;
+      for (const tx of allTransactions) {
+        const txSeq = String(tx.id).slice(-6).padStart(6, '0');
+        if (txSeq === certIdMatch[2]) {
+          matchingTx = tx;
+          break;
+        }
+      }
+
+      if (!matchingTx) {
+        return res.status(404).json({
+          error: "Certificate not found",
+          status: "Not Found"
+        });
+      }
+
+      // Get related data
+      const buyer = await storage.getUser(matchingTx.buyerId);
+      const contributor = await storage.getUser(matchingTx.contributorId);
+      const project = await storage.getProject(matchingTx.projectId);
+
+      if (!buyer || !project) {
+        return res.status(404).json({
+          error: "Certificate data not found",
+          status: "Not Found"
+        });
+      }
+
+      // Determine status based on certificateStatus field
+      const status = matchingTx.certificateStatus === 'revoked' ? 'REVOKED' : 'Valid';
+
+      return res.json({
+        certificateId: `BCL-${year}-${certIdMatch[2]}`,
+        status,
+        projectName: project.name,
+        buyerName: buyer.name,
+        creditsPurchased: matchingTx.credits,
+        issueDate: matchingTx.timestamp,
+        projectLocation: project.location,
+        ecosystemType: project.ecosystemType,
+        transactionId: matchingTx.id,
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -539,25 +956,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/blockchain/export", async (req, res) => {
+  app.get("/api/blockchain/export", async (_req, res) => {
     try {
       const blocks = await storage.getAllBlocks();
       const transactions = await storage.getAllTransactions();
       const projects = await storage.getAllProjects();
+
+      // ── Real Blockchain Integrity Validation (Task 5.1) ──────────────────
+      // Validate the entire chain by recomputing each block's hash from its
+      // stored blockHashInput and verifying the previousHash linkage.
+      let integrityStatus: "verified" | "tampered" = "verified";
+      const integrityErrors: string[] = [];
+
+      const sortedBlocks = [...blocks].sort((a, b) => a.index - b.index);
+
+      for (let i = 0; i < sortedBlocks.length; i++) {
+        const block = sortedBlocks[i];
+
+        // 1. Recompute hash from stored input and compare
+        const recomputedHash = sha256(block.blockHashInput);
+        if (recomputedHash !== block.blockHash) {
+          integrityStatus = "tampered";
+          integrityErrors.push(
+            `Block #${block.index}: hash mismatch. Expected ${recomputedHash}, got ${block.blockHash}`
+          );
+        }
+
+        // 2. Verify previousHash linkage (skip genesis block)
+        if (i > 0) {
+          const prevBlock = sortedBlocks[i - 1];
+          if (block.previousHash !== prevBlock.blockHash) {
+            integrityStatus = "tampered";
+            integrityErrors.push(
+              `Block #${block.index}: previousHash does not match Block #${prevBlock.index} hash`
+            );
+          }
+        }
+      }
 
       const exportData = {
         exportedAt: new Date().toISOString(),
         totalBlocks: blocks.length,
         totalTransactions: transactions.length,
         totalProjects: projects.length,
-        blocks: blocks.map(block => ({
+        blocks: sortedBlocks.map(block => ({
           ...block,
           transactions: transactions.filter(tx => tx.blockId === block.id),
         })),
-        integrity: 'verified',
+        integrity: integrityStatus,
+        integrityErrors: integrityErrors.length > 0 ? integrityErrors : undefined,
       };
 
       return res.json(exportData);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ── Blockchain Integrity Check Endpoint (Task 5.1) ──────────────────────────
+  app.get("/api/blockchain/integrity", async (_req, res) => {
+    try {
+      const blocks = await storage.getAllBlocks();
+      const sortedBlocks = [...blocks].sort((a, b) => a.index - b.index);
+
+      let status: "verified" | "tampered" = "verified";
+      const errors: string[] = [];
+
+      for (let i = 0; i < sortedBlocks.length; i++) {
+        const block = sortedBlocks[i];
+
+        const recomputedHash = sha256(block.blockHashInput);
+        if (recomputedHash !== block.blockHash) {
+          status = "tampered";
+          errors.push(`Block #${block.index}: hash mismatch`);
+        }
+
+        if (i > 0) {
+          const prevBlock = sortedBlocks[i - 1];
+          if (block.previousHash !== prevBlock.blockHash) {
+            status = "tampered";
+            errors.push(`Block #${block.index}: broken chain link`);
+          }
+        }
+      }
+
+      return res.json({
+        status,
+        totalBlocks: sortedBlocks.length,
+        checkedAt: new Date().toISOString(),
+        errors: errors.length > 0 ? errors : undefined,
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -573,9 +1061,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // MARKETPLACE ROUTES - Protected (Buyer role)
-  app.get("/api/projects/marketplace", requireAuth, requireRole('buyer'), async (req: AuthRequest, res) => {
+  app.get("/api/projects/marketplace", requireAuth, requireRole("buyer"), async (_req: AuthRequest, res) => {
     try {
-      const projects = await storage.getProjectsByStatus('verified');
+      // ── Cached marketplace listing (Task 7.3) ─────────────────────────────
+      const CACHE_KEY = "marketplace:verified-projects";
+      const cached = cache.get<object[]>(CACHE_KEY);
+      if (cached) return res.json(cached);
+
+      const projects = await storage.getProjectsByStatus("verified");
+      cache.set(CACHE_KEY, projects, CACHE_TTL_MARKETPLACE);
       return res.json(projects);
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
@@ -643,8 +1137,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         credits
       );
 
-      return res.json({ 
-        message: 'Purchase successful',
+      // Invalidate marketplace cache — project's available credits have changed
+      cache.invalidate("marketplace:verified-projects");
+
+      // Audit: credits purchased and retired
+      await audit({
+        userId: req.user.id,
+        actionType: AUDIT_ACTION_TYPES.CREDITS_PURCHASED,
+        entityType: "credit_transaction",
+        entityId: result.transaction.id,
+        metadata: {
+          buyerId: req.user.id,
+          contributorId,
+          projectId,
+          credits,
+          projectName: result.project.name,
+        },
+      });
+
+      return res.json({
+        message: "Purchase successful",
         buyer: { ...result.buyer, password: undefined },
         project: result.project,
         transaction: result.transaction,
@@ -758,6 +1270,149 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(404);
       }
       return res.sendStatus(500);
+    }
+  });
+
+  // ─── DATABASE BACKUP ENDPOINT (Task 4.3) ─────────────────────────────────────
+  // Admin-only endpoint to trigger a manual backup export (JSON dump of all tables).
+  // This provides a downloadable snapshot of the database state for disaster recovery.
+  app.post("/api/admin/backup", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      // Collect all data from storage
+      const [
+        allUsers,
+        allProjects,
+        allTransactions,
+        allBlocks,
+        allCreditTransactions,
+      ] = await Promise.all([
+        storage.getAllUsers(),
+        storage.getAllProjects(),
+        storage.getAllTransactions(),
+        storage.getAllBlocks(),
+        storage.getAllCreditTransactions(),
+      ]);
+
+      // Remove sensitive data (passwords) from users
+      const sanitizedUsers = allUsers.map((user) => {
+        const { password: _password, ...userWithoutPassword } = user;
+        return userWithoutPassword;
+      });
+
+      // Get audit logs from in-memory store
+      const auditLogsData = await (async () => {
+        try {
+          const { memAuditLog } = await import("./auditLog");
+          return memAuditLog.getAll();
+        } catch {
+          return [];
+        }
+      })();
+
+      // Build backup object with metadata
+      const backup = {
+        metadata: {
+          exportedAt: new Date().toISOString(),
+          exportedBy: req.user.id,
+          version: "1.0",
+          environment: process.env.NODE_ENV || "development",
+        },
+        counts: {
+          users: sanitizedUsers.length,
+          projects: allProjects.length,
+          transactions: allTransactions.length,
+          blocks: allBlocks.length,
+          creditTransactions: allCreditTransactions.length,
+          auditLogs: auditLogsData.length,
+        },
+        data: {
+          users: sanitizedUsers,
+          projects: allProjects,
+          transactions: allTransactions,
+          blocks: allBlocks,
+          creditTransactions: allCreditTransactions,
+          auditLogs: auditLogsData,
+        },
+      };
+
+      // Set headers for file download
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `bluecarbon-backup-${timestamp}.json`;
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+      // Audit: backup was triggered
+      await audit({
+        userId: req.user.id,
+        actionType: "BACKUP_CREATED" as any,
+        entityType: "system",
+        entityId: null,
+        metadata: {
+          filename,
+          recordCounts: backup.counts,
+        },
+      });
+
+      return res.json(backup);
+    } catch (error: any) {
+      console.error("Backup failed:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── CERTIFICATE REVOCATION ENDPOINT (Task 3.1) ─────────────────────────────────────
+  // Admin-only endpoint to revoke a certificate. This marks the certificate as revoked
+  // in the database without affecting blockchain records or purchase transactions.
+  app.post("/api/admin/certificates/:id/revoke", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      // Find the credit transaction
+      const transaction = await storage.getCreditTransaction(id);
+      if (!transaction) {
+        return res.status(404).json({ error: "Certificate not found" });
+      }
+
+      // Check if already revoked
+      if (transaction.certificateStatus === 'revoked') {
+        return res.status(400).json({ error: "Certificate is already revoked" });
+      }
+
+      // Update the certificate status
+      await storage.updateCreditTransaction(id, { certificateStatus: 'revoked' });
+
+      // Audit log the revocation
+      await audit({
+        userId: req.user.id,
+        actionType: AUDIT_ACTION_TYPES.CERTIFICATE_REVOKED,
+        entityType: 'creditTransaction',
+        entityId: id,
+        metadata: {
+          reason: reason || 'No reason provided',
+          previousStatus: transaction.certificateStatus,
+          newStatus: 'revoked',
+        },
+      });
+
+      return res.json({
+        success: true,
+        message: "Certificate revoked successfully",
+        certificateId: id,
+        status: "revoked",
+      });
+    } catch (error: any) {
+      console.error("Certificate revocation failed:", error);
+      return res.status(500).json({ error: error.message });
     }
   });
 

@@ -5,6 +5,7 @@ import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, 
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
+import { ComplianceDisclaimer } from '@/components/compliance-disclaimer';
 import { useAuth } from '@/lib/auth-context';
 import { HashDisplay } from '@/components/hash-display';
 import { format } from 'date-fns';
@@ -13,6 +14,13 @@ import { ProjectSubmissionForm } from '@/components/project-submission-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import type { Project, Transaction, CreditTransaction } from "@shared/schema";
+
+type Sale = CreditTransaction & {
+  buyerName: string;
+  projectName: string;
+};
+
 
 const GISLandMap = lazy(() => import('@/components/gis-land-map'));
 
@@ -22,20 +30,21 @@ export default function UserDashboard() {
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [selectedProject, setSelectedProject] = useState<any>(null);
 
-  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: ['/api/projects/my'],
     enabled: !!user?.id,
   });
 
-  const { data: transactions = [] } = useQuery({
+  const { data: transactions = [] } = useQuery<Transaction[]>({
     queryKey: ['/api/transactions/my'],
     enabled: !!user?.id,
   });
 
-  const { data: sales = [] } = useQuery({
+  const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ['/api/credits/sales'],
     enabled: !!user?.id,
   });
+
 
   const creditsAvailable = projects
     .filter((p: any) => p.status === 'verified')
@@ -66,6 +75,9 @@ export default function UserDashboard() {
       <SubtleOceanBackground />
 
       <div className="container mx-auto px-6 py-8 space-y-8">
+        {/* Task 9.3: Inline compliance disclaimer */}
+        <ComplianceDisclaimer variant="inline" />
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-heading font-bold">Contributor Dashboard</h1>
@@ -334,7 +346,7 @@ export default function UserDashboard() {
                             return [];
                           }
                         })()}
-                        onBoundaryChange={() => {}}
+                        onBoundaryChange={() => { }}
                         readOnly={true}
                       />
                     </Suspense>

@@ -16,30 +16,39 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import type { Project, User, Block } from "@shared/schema";
+
+type DashboardStats = {
+  totalProjects: number;
+  verifiedProjects: number;
+  totalCO2Captured: number;
+};
+
 
 export default function AdminDashboard() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const { data: stats } = useQuery({
+  const { data: stats } = useQuery<DashboardStats>({
     queryKey: ['/api/stats'],
   });
 
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ['/api/projects'],
   });
 
-  const { data: verifiers = [] } = useQuery({
+  const { data: verifiers = [] } = useQuery<User[]>({
     queryKey: ['/api/users/verifiers'],
   });
 
-  const { data: allUsers = [] } = useQuery({
+  const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ['/api/users'],
   });
 
-  const { data: blocks = [] } = useQuery({
+  const { data: blocks = [] } = useQuery<Block[]>({
     queryKey: ['/api/blocks'],
   });
+
 
   const buyers = allUsers
     .filter((u: any) => u.role === 'buyer')

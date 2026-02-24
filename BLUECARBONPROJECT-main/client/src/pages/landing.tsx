@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Waves, Leaf, Upload, Shield, Link2, Eye } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import mangroveHero from '@assets/stock_images/mangrove_trees_in_wa_df0d8991.jpg';
 import mangroveEcosystem from '@assets/stock_images/mangrove_forest_unde_2f49118f.jpg';
 import saltMarsh from '@assets/stock_images/salt_marsh_wetland_c_09b253ba.jpg';
@@ -353,6 +353,10 @@ export default function Landing() {
             <p className="text-lg" data-testid="text-footer-copyright">
               © 2025 BlueCarbon Ledger. Built for a Sustainable Future.
             </p>
+          </div>
+          <div className="flex justify-center gap-6 mt-4 text-sm text-gray-300">
+            <Link href="/terms" className="hover:text-white underline">Terms of Service</Link>
+            <Link href="/privacy" className="hover:text-white underline">Privacy Policy</Link>
           </div>
         </div>
       </footer>

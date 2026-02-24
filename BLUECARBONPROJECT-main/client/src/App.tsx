@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "./lib/auth-context";
 import { ThemeProvider } from "./lib/theme-provider";
 import { Navbar } from "./components/navbar";
+import { ComplianceDisclaimer } from "./components/compliance-disclaimer";
 import Landing from "./pages/landing";
 import Login from "./pages/login";
 import UserDashboard from "./pages/user-dashboard";
@@ -14,6 +15,8 @@ import VerifierDashboard from "./pages/verifier-dashboard";
 import Marketplace from "./pages/marketplace";
 import Explorer from "./pages/explorer";
 import NotFound from "./pages/not-found";
+import TermsOfService from "./pages/terms";
+import PrivacyPolicy from "./pages/privacy";
 
 function ProtectedRoute({
   component: Component,
@@ -65,8 +68,12 @@ function Router() {
           {() => <ProtectedRoute component={VerifierDashboard} allowedRoles={['verifier']} />}
         </Route>
         <Route path="/explorer" component={Explorer} />
+        <Route path="/terms" component={TermsOfService} />
+        <Route path="/privacy" component={PrivacyPolicy} />
         <Route component={NotFound} />
       </Switch>
+      {/* Task 9.3: Persistent compliance disclaimer on every page */}
+      <ComplianceDisclaimer variant="banner" />
     </>
   );
 }

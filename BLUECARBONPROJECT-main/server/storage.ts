@@ -5,10 +5,10 @@ import { users, projects, transactions, blocks, creditTransactions } from "@shar
 import { eq, desc } from "drizzle-orm";
 
 // Type for project creation with calculated carbon values
-export type InsertProjectWithCarbon = InsertProject & { 
-  annualCO2: number; 
-  lifetimeCO2: number; 
-  co2Captured: number 
+export type InsertProjectWithCarbon = InsertProject & {
+  annualCO2: number;
+  lifetimeCO2: number;
+  co2Captured: number
 };
 
 export interface IStorage {
@@ -49,9 +49,11 @@ export interface IStorage {
 
   // Credit Transactions
   getCreditTransaction(id: string): Promise<CreditTransaction | undefined>;
+  getAllCreditTransactions(): Promise<CreditTransaction[]>;
   getCreditTransactionsByBuyerId(buyerId: string): Promise<CreditTransaction[]>;
   getCreditTransactionsByContributorId(contributorId: string): Promise<CreditTransaction[]>;
   createCreditTransaction(transaction: Omit<CreditTransaction, 'id'>): Promise<CreditTransaction>;
+  updateCreditTransaction(id: string, updates: Partial<CreditTransaction>): Promise<CreditTransaction | undefined>;
   purchaseCredits(buyerId: string, contributorId: string, projectId: string, credits: number): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }>;
 }
 
@@ -139,9 +141,9 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     // Hash password before storing
     const hashedPassword = await bcrypt.hash(insertUser.password, 12);
-    const user: User = { 
-      ...insertUser, 
-      id, 
+    const user: User = {
+      ...insertUser,
+      id,
       password: hashedPassword,
       role: insertUser.role || 'contributor',
       username: null,
@@ -193,11 +195,13 @@ export class MemStorage implements IStorage {
     const project: Project = {
       ...insertProject,
       id,
-      status: 'pending',
+      status: "pending",
       verifierId: null,
       rejectionReason: null,
+      clarificationNote: null, // Task 2.1: Initialize clarification note
       proofFileUrl: insertProject.proofFileUrl || null,
       plantationType: insertProject.plantationType || null,
+      landBoundary: insertProject.landBoundary || null,
       creditsEarned: 0, // Credits start at 0, will be set to lifetimeCO2 when verified
       submittedAt: new Date(),
     };
@@ -280,6 +284,10 @@ export class MemStorage implements IStorage {
     return this.creditTransactions.get(id);
   }
 
+  async getAllCreditTransactions(): Promise<CreditTransaction[]> {
+    return Array.from(this.creditTransactions.values());
+  }
+
   async getCreditTransactionsByBuyerId(buyerId: string): Promise<CreditTransaction[]> {
     return Array.from(this.creditTransactions.values())
       .filter((tx) => tx.buyerId === buyerId)
@@ -294,9 +302,22 @@ export class MemStorage implements IStorage {
 
   async createCreditTransaction(transaction: Omit<CreditTransaction, 'id'>): Promise<CreditTransaction> {
     const id = randomUUID();
-    const tx: CreditTransaction = { ...transaction, id };
+    // Ensure certificateStatus is set (Task 3.1)
+    const tx: CreditTransaction = { 
+      ...transaction, 
+      id, 
+      certificateStatus: transaction.certificateStatus || 'valid' 
+    };
     this.creditTransactions.set(id, tx);
     return tx;
+  }
+
+  async updateCreditTransaction(id: string, updates: Partial<CreditTransaction>): Promise<CreditTransaction | undefined> {
+    const existing = this.creditTransactions.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updates };
+    this.creditTransactions.set(id, updated);
+    return updated;
   }
 
   async purchaseCredits(
@@ -350,6 +371,7 @@ export class MemStorage implements IStorage {
       projectId,
       credits,
       timestamp: new Date(),
+      certificateStatus: 'valid', // Task 3.1: Default status
     };
 
     // Persist changes
@@ -551,6 +573,13 @@ export class DbStorage implements IStorage {
     return tx || undefined;
   }
 
+  async getAllCreditTransactions(): Promise<CreditTransaction[]> {
+    return await this.db
+      .select()
+      .from(creditTransactions)
+      .orderBy(desc(creditTransactions.timestamp));
+  }
+
   async getCreditTransactionsByBuyerId(buyerId: string): Promise<CreditTransaction[]> {
     return await this.db
       .select()
@@ -571,7 +600,16 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     const [tx] = await this.db
       .insert(creditTransactions)
-      .values({ ...transaction, id })
+      .values({ ...transaction, id, certificateStatus: transaction.certificateStatus || 'valid' })
+      .returning();
+    return tx;
+  }
+
+  async updateCreditTransaction(id: string, updates: Partial<CreditTransaction>): Promise<CreditTransaction | undefined> {
+    const [tx] = await this.db
+      .update(creditTransactions)
+      .set(updates)
+      .where(eq(creditTransactions.id, id))
       .returning();
     return tx;
   }
@@ -649,7 +687,7 @@ export class DbStorage implements IStorage {
 // Storage switcher - use environment variable to choose storage type
 async function createStorage(): Promise<IStorage> {
   const useDatabase = process.env.USE_DATABASE === 'true';
-  
+
   if (useDatabase) {
     try {
       // Dynamically import db to avoid errors when DATABASE_URL is not set
@@ -662,7 +700,7 @@ async function createStorage(): Promise<IStorage> {
       return new MemStorage();
     }
   }
-  
+
   console.log('✅ Using in-memory storage');
   return new MemStorage();
 }

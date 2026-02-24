@@ -11,6 +11,8 @@ import { HashDisplay } from '@/components/hash-display';
 import { sha256 } from 'js-sha256';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { Block, Transaction } from "@shared/schema";
+
 
 export default function Explorer() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -19,13 +21,14 @@ export default function Explorer() {
   const [verificationResult, setVerificationResult] = useState<'verified' | 'tampered' | null>(null);
   const [activeTab, setActiveTab] = useState('blocks');
 
-  const { data: blocks = [] } = useQuery({
+  const { data: blocks = [] } = useQuery<Block[]>({
     queryKey: ['/api/blocks'],
   });
 
-  const { data: allTransactions = [] } = useQuery({
+  const { data: allTransactions = [] } = useQuery<Transaction[]>({
     queryKey: ['/api/transactions'],
   });
+
 
   const handleVerify = () => {
     const computedHash = sha256(verifyData);
@@ -48,17 +51,17 @@ export default function Explorer() {
 
   const filteredBlocks = searchQuery
     ? blocks.filter((block: any) =>
-        block.blockHash.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        block.merkleRoot.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        block.index.toString().includes(searchQuery)
-      )
+      block.blockHash.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      block.merkleRoot.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      block.index.toString().includes(searchQuery)
+    )
     : blocks;
 
   const filteredTransactions = searchQuery
     ? allTransactions.filter((tx: any) =>
-        tx.txId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tx.projectId.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      tx.txId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tx.projectId.toLowerCase().includes(searchQuery.toLowerCase())
+    )
     : [];
 
   const getBlockTransactions = (blockId: string) => {
@@ -118,7 +121,7 @@ export default function Explorer() {
                 ))}
               </div>
             )}
-            
+
             {searchQuery && filteredTransactions.length === 0 && (
               <div className="mt-6 p-4 rounded-lg border bg-muted/30 text-center">
                 <p className="text-muted-foreground">No transactions match your search</p>
@@ -233,11 +236,10 @@ export default function Explorer() {
 
                 {verificationResult && (
                   <div
-                    className={`p-6 rounded-lg border-2 text-center ${
-                      verificationResult === 'verified'
+                    className={`p-6 rounded-lg border-2 text-center ${verificationResult === 'verified'
                         ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30'
                         : 'border-red-500 bg-red-50 dark:bg-red-950/30'
-                    }`}
+                      }`}
                     data-testid="verification-result"
                   >
                     {verificationResult === 'verified' ? (

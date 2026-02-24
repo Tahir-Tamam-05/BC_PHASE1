@@ -13,7 +13,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { generateCertificatePDF, prepareCertificateData } from '@/components/certificate-generator';
+import { generateCertificatePDFWithQR, prepareCertificateData } from '@/components/certificate-generator';
 import type { Project, CreditTransaction } from '@shared/schema';
 
 export default function Marketplace() {
@@ -90,10 +90,10 @@ export default function Marketplace() {
     });
   };
 
-  const handleDownloadCertificate = (purchase: any) => {
+  const handleDownloadCertificate = async (purchase: any) => {
     if (!user) return;
     const certData = prepareCertificateData(purchase, user.name || 'Buyer');
-    generateCertificatePDF(certData);
+    await generateCertificatePDFWithQR(certData);
     toast({
       title: 'Certificate Downloaded',
       description: 'Your carbon offset certificate has been generated.',

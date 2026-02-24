@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, timestamp, real } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, real, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   username: text("username"), // Optional legacy field
   location: text("location"), // Location for buyers and contributors
   creditsPurchased: real("credits_purchased").default(0), // For buyers - total credits purchased
+  deletedAt: timestamp("deleted_at"), // Soft delete timestamp
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, role: true, username: true });
@@ -19,26 +20,39 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
 // Projects table
-export const projects = pgTable("projects", {
-  id: varchar("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description").notNull(),
-  location: text("location").notNull(),
-  area: real("area").notNull(), // in hectares
-  ecosystemType: text("ecosystem_type").notNull(), // 'Mangrove' | 'Seagrass' | 'Salt Marsh' | 'Coastal' | 'Other'
-  plantationType: text("plantation_type"), // Type of plantation for contributors
-  annualCO2: real("annual_co2").notNull(), // calculated annual sequestration in tons
-  lifetimeCO2: real("lifetime_co2").notNull(), // calculated 20-year total in tons
-  co2Captured: real("co2_captured").notNull(), // legacy field, now same as lifetimeCO2
-  creditsEarned: real("credits_earned").notNull().default(0), // Credits available for sale (initially = lifetimeCO2)
-  status: text("status").notNull(), // 'pending' | 'verified' | 'rejected'
-  userId: varchar("user_id").notNull(),
-  proofFileUrl: text("proof_file_url"),
-  verifierId: varchar("verifier_id"),
-  rejectionReason: text("rejection_reason"),
-  submittedAt: timestamp("submitted_at").notNull(),
-  landBoundary: text("land_boundary"), // GIS polygon coordinates as JSON string [[lat,lng], ...]
-});
+// Task 4.1: Added indexes on userId, status, verifierId for query performance
+export const projects = pgTable(
+  "projects",
+  {
+    id: varchar("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    location: text("location").notNull(),
+    area: real("area").notNull(), // in hectares
+    ecosystemType: text("ecosystem_type").notNull(), // 'Mangrove' | 'Seagrass' | 'Salt Marsh' | 'Coastal' | 'Other'
+    plantationType: text("plantation_type"), // Type of plantation for contributors
+    annualCO2: real("annual_co2").notNull(), // calculated annual sequestration in tons
+    lifetimeCO2: real("lifetime_co2").notNull(), // calculated 20-year total in tons
+    co2Captured: real("co2_captured").notNull(), // legacy field, now same as lifetimeCO2
+    creditsEarned: real("credits_earned").notNull().default(0), // Credits available for sale (initially = lifetimeCO2)
+    // Task 2.1: Added 'needs_clarification' status
+    status: text("status").notNull(), // 'pending' | 'verified' | 'rejected' | 'needs_clarification'
+    userId: varchar("user_id").notNull(),
+    proofFileUrl: text("proof_file_url"),
+    verifierId: varchar("verifier_id"),
+    rejectionReason: text("rejection_reason"),
+    clarificationNote: text("clarification_note"), // Task 2.1: Separate field for clarification messages
+    submittedAt: timestamp("submitted_at").notNull(),
+    landBoundary: text("land_boundary"), // GIS polygon coordinates as JSON string [[lat,lng], ...]
+    deletedAt: timestamp("deleted_at"), // Soft delete timestamp
+  },
+  (table) => ({
+    // Task 4.1: Performance indexes
+    userIdIdx: index("projects_user_id_idx").on(table.userId),
+    statusIdx: index("projects_status_idx").on(table.status),
+    verifierIdIdx: index("projects_verifier_id_idx").on(table.verifierId),
+  })
+);
 
 export const insertProjectSchema = createInsertSchema(projects).omit({ 
   id: true,
@@ -54,17 +68,26 @@ export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
 
 // Transactions table (blockchain transactions)
-export const transactions = pgTable("transactions", {
-  id: varchar("id").primaryKey(),
-  txId: text("tx_id").notNull().unique(),
-  from: text("from").notNull(),
-  to: text("to").notNull(),
-  credits: real("credits").notNull(),
-  projectId: varchar("project_id").notNull(),
-  timestamp: timestamp("timestamp").notNull(),
-  proofHash: text("proof_hash").notNull(),
-  blockId: varchar("block_id"),
-});
+// Task 4.1: Added indexes on projectId and blockId
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: varchar("id").primaryKey(),
+    txId: text("tx_id").notNull().unique(),
+    from: text("from").notNull(),
+    to: text("to").notNull(),
+    credits: real("credits").notNull(),
+    projectId: varchar("project_id").notNull(),
+    timestamp: timestamp("timestamp").notNull(),
+    proofHash: text("proof_hash").notNull(),
+    blockId: varchar("block_id"),
+  },
+  (table) => ({
+    projectIdIdx: index("transactions_project_id_idx").on(table.projectId),
+    blockIdIdx: index("transactions_block_id_idx").on(table.blockId),
+    toIdx: index("transactions_to_idx").on(table.to),
+  })
+);
 
 export type Transaction = typeof transactions.$inferSelect;
 
@@ -84,14 +107,25 @@ export const blocks = pgTable("blocks", {
 export type Block = typeof blocks.$inferSelect;
 
 // Credit Transactions table (tracks credit purchases between buyers and contributors)
-export const creditTransactions = pgTable("credit_transactions", {
-  id: varchar("id").primaryKey(),
-  buyerId: varchar("buyer_id").notNull(),
-  contributorId: varchar("contributor_id").notNull(),
-  projectId: varchar("project_id").notNull(),
-  credits: real("credits").notNull(),
-  timestamp: timestamp("timestamp").notNull(),
-});
+// Task 4.1: Added indexes on buyerId, contributorId, projectId
+// Task 3.1: Added certificateStatus field for revocation tracking
+export const creditTransactions = pgTable(
+  "credit_transactions",
+  {
+    id: varchar("id").primaryKey(),
+    buyerId: varchar("buyer_id").notNull(),
+    contributorId: varchar("contributor_id").notNull(),
+    projectId: varchar("project_id").notNull(),
+    credits: real("credits").notNull(),
+    timestamp: timestamp("timestamp").notNull(),
+    certificateStatus: text("certificate_status").notNull().default("valid"), // "valid" | "revoked"
+  },
+  (table) => ({
+    buyerIdIdx: index("credit_tx_buyer_id_idx").on(table.buyerId),
+    contributorIdIdx: index("credit_tx_contributor_id_idx").on(table.contributorId),
+    projectIdIdx: index("credit_tx_project_id_idx").on(table.projectId),
+  })
+);
 
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 
@@ -110,16 +144,29 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+// Task 1.4: Password complexity requirements
+// Enforces: min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special character
+const passwordComplexitySchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(
+    /[^A-Za-z0-9]/,
+    "Password must contain at least one special character (e.g. !@#$%)"
+  );
+
 // Signup schema - requires name, Gmail address, password, and role selection
 export const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string()
     .email("Invalid email address")
-    .refine((email) => email.endsWith('@gmail.com'), {
+    .refine((email) => email.endsWith("@gmail.com"), {
       message: "Please use a Gmail address (@gmail.com)",
     }),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(['contributor', 'buyer'], {
+  password: passwordComplexitySchema,
+  role: z.enum(["contributor", "buyer"], {
     errorMap: () => ({ message: "Please select your account type" }),
   }),
 });
@@ -134,18 +181,28 @@ export const projectSubmissionSchema = insertProjectSchema.extend({
   ecosystemType: z.enum(['Mangrove', 'Seagrass', 'Salt Marsh', 'Coastal', 'Other']),
 });
 
-// Approval/Rejection schema
+// Task 2.1: Standardized rejection reason codes
+export const REJECTION_REASON_CODES = [
+  "INSUFFICIENT_DOCUMENTATION",
+  "INVALID_GIS_BOUNDARY",
+  "MRV_INCOMPLETE",
+  "OWNERSHIP_UNCLEAR",
+  "OTHER",
+] as const;
+
+export type RejectionReasonCode = (typeof REJECTION_REASON_CODES)[number];
+
+// Approval/Rejection/Clarification schema
+// Task 2.1: 'clarify' action now uses a dedicated clarificationNote field
 export const projectReviewSchema = z.object({
   projectId: z.string(),
-  action: z.enum(['approve', 'reject', 'clarify']),
-  rejectionReason: z.enum([
-    'INSUFFICIENT_DOCUMENTATION',
-    'INVALID_GIS_BOUNDARY',
-    'MRV_INCOMPLETE',
-    'OWNERSHIP_UNCLEAR',
-    'OTHER'
-  ]).optional(),
+  action: z.enum(["approve", "reject", "clarify"]),
+  rejectionReason: z.enum(REJECTION_REASON_CODES).optional(),
   comment: z.string().optional(),
+  clarificationNote: z
+    .string()
+    .min(10, "Clarification note must be at least 10 characters")
+    .optional(),
 });
 export type ProjectReview = z.infer<typeof projectReviewSchema>;
 
@@ -155,3 +212,59 @@ export const hashVerificationSchema = z.object({
   expectedHash: z.string(),
 });
 export type HashVerification = z.infer<typeof hashVerificationSchema>;
+
+// ─── Audit Logs Table (Task 1.3) ──────────────────────────────────────────────
+// Append-only tamper-resistant log of all sensitive actions.
+// IMPORTANT: This table must NEVER have UPDATE or DELETE operations applied to it.
+// Indexes on userId and actionType for admin queries; timestamp for chronological ordering.
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: varchar("id").primaryKey(),
+    // The user who performed the action (null for system-initiated events)
+    userId: varchar("user_id"),
+    // Standardized action type — see AuditActionType below
+    actionType: text("action_type").notNull(),
+    // The type of entity this action was performed on
+    entityType: text("entity_type").notNull(),
+    // The ID of the entity (project ID, user ID, transaction ID, etc.)
+    entityId: varchar("entity_id"),
+    // Arbitrary JSON metadata (e.g. IP address, old/new values, reason codes)
+    metadata: text("metadata"), // stored as JSON string
+    // Immutable creation timestamp — set once, never updated
+    timestamp: timestamp("timestamp").notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("audit_logs_user_id_idx").on(table.userId),
+    actionTypeIdx: index("audit_logs_action_type_idx").on(table.actionType),
+    timestampIdx: index("audit_logs_timestamp_idx").on(table.timestamp),
+  })
+);
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+
+// Standardized action type constants — exhaustive list of all auditable events
+export const AUDIT_ACTION_TYPES = {
+  // Authentication
+  LOGIN_SUCCESS: "LOGIN_SUCCESS",
+  LOGIN_FAILURE: "LOGIN_FAILURE",
+  ACCOUNT_LOCKED: "ACCOUNT_LOCKED",
+  SIGNUP: "SIGNUP",
+
+  // Project lifecycle
+  PROJECT_SUBMITTED: "PROJECT_SUBMITTED",
+  PROJECT_APPROVED: "PROJECT_APPROVED",
+  PROJECT_REJECTED: "PROJECT_REJECTED",
+  PROJECT_CLARIFICATION_REQUESTED: "PROJECT_CLARIFICATION_REQUESTED",
+
+  // Credits & marketplace
+  CREDITS_PURCHASED: "CREDITS_PURCHASED",
+  CERTIFICATE_ISSUED: "CERTIFICATE_ISSUED",
+  CERTIFICATE_REVOKED: "CERTIFICATE_REVOKED",
+
+  // Administration
+  VERIFIER_ASSIGNED: "VERIFIER_ASSIGNED",
+  ROLE_CHANGED: "ROLE_CHANGED",
+} as const;
+
+export type AuditActionType = (typeof AUDIT_ACTION_TYPES)[keyof typeof AUDIT_ACTION_TYPES];
