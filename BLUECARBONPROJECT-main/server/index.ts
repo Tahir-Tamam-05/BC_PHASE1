@@ -45,7 +45,7 @@ app.use(
       process.env.NODE_ENV === "production"
         ? undefined
         : false,
-    // Allow cross-origin requests from Replit's proxy
+    // Allow cross-origin requests from proxy
     crossOriginEmbedderPolicy: false,
   })
 );
@@ -137,7 +137,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── CORS (Replit proxy support) ──────────────────────────────────────────────
+// ─── CORS (Proxy support) ──────────────────────────────────────────────
 app.set("trust proxy", true);
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
