@@ -133,7 +133,7 @@ function isOverlapping(newCoords: number[][], existingProjects: any[]): string |
   if (!turf) return null;
   try {
     if (!newCoords || newCoords.length < 3) return null;
-    
+
     // Convert new coordinates to a Turf polygon
     // Leaflet uses [lat, lng], Turf uses [lng, lat]
     const newPolygon = turf.polygon([
@@ -142,11 +142,11 @@ function isOverlapping(newCoords: number[][], existingProjects: any[]): string |
 
     for (const project of existingProjects) {
       if (!project.landBoundary || project.status !== 'verified') continue;
-      
+
       try {
         const existingCoords = JSON.parse(project.landBoundary);
         if (!existingCoords || existingCoords.length < 3) continue;
-        
+
         const existingPolygon = turf.polygon([
           [...existingCoords.map((c: any) => [c[1], c[0]]), [existingCoords[0][1], existingCoords[0][0]]]
         ]);
@@ -329,6 +329,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/auth/profile", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { password: _, ...userWithoutPassword } = user;
+      return res.json(userWithoutPassword);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/debug/users", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      return res.json(allUsers.map(u => {
+        const { password: _, ...rest } = u;
+        return rest;
+      }));
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   // ─── ROLE CHANGE ROUTE (ADMIN ONLY) ───────────────────────────────────────────
   app.patch("/api/users/:id/role", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
     try {
@@ -342,8 +370,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate role
       const allowedRoles = ['admin', 'verifier', 'contributor', 'buyer'];
       if (!role || !allowedRoles.includes(role)) {
-        return res.status(400).json({ 
-          error: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}` 
+        return res.status(400).json({
+          error: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}`
         });
       }
 
@@ -379,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
 
-      return res.json({ 
+      return res.json({
         message: "Role updated successfully",
         user: { ...updatedUser, password: undefined }
       });
@@ -444,14 +472,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const newCoords = JSON.parse(projectData.landBoundary);
           const allProjects = await storage.getAllProjects();
           const overlappingProjectName = isOverlapping(newCoords, allProjects);
-          
+
           if (overlappingProjectName) {
-            return res.status(400).json({ 
-              error: `GIS Overlap Detected: The selected area overlaps with an existing verified project ("${overlappingProjectName}"). Please adjust your boundaries.` 
+            return res.status(400).json({
+              error: `GIS Overlap Detected: The selected area overlaps with an existing verified project ("${overlappingProjectName}"). Please adjust your boundaries.`
             });
           }
 
-// Day 6: GIS Area Cross-Validation
+          // Day 6: GIS Area Cross-Validation
           const calculatedArea = calculateGisArea(newCoords);
           const declaredArea = validated.area;
           const variance = Math.abs(calculatedArea - declaredArea) / (declaredArea || 1);
@@ -488,14 +516,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ];
 
         if (!allowedMimeTypes.includes(req.file.mimetype)) {
-          return res.status(400).json({ 
-            error: "Invalid file type. Only PDF, JPG, PNG, and DOCX files are allowed." 
+          return res.status(400).json({
+            error: "Invalid file type. Only PDF, JPG, PNG, and DOCX files are allowed."
           });
         }
 
         // Check if object storage is configured
         const isObjectStorageConfigured = process.env.PRIVATE_OBJECT_DIR;
-        
+
         if (isObjectStorageConfigured) {
           try {
             const objectStorage = new ObjectStorageService();
@@ -508,8 +536,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             validated.proofFileUrl = uploadedUrl;
           } catch (uploadError: any) {
             console.error("File upload error:", uploadError);
-            return res.status(500).json({ 
-              error: uploadError.message || "Failed to upload proof document" 
+            return res.status(500).json({
+              error: uploadError.message || "Failed to upload proof document"
             });
           }
         } else {
@@ -527,7 +555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         co2Captured: lifetimeCO2, // Legacy field, same as lifetime
         landBoundary: projectData.landBoundary, // GIS polygon data
       };
-      
+
       const project = await storage.createProject(projectWithCarbon);
 
       // Audit: project submitted
@@ -544,7 +572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
 
-      return res.json({ 
+      return res.json({
         message: "Project submitted successfully",
         project,
         carbonCalculation: {
@@ -812,7 +840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const project = await storage.getProject(id);
-      
+
       if (!project || project.status !== 'verified') {
         return res.status(404).json({ error: "Verified project not found" });
       }
@@ -865,9 +893,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Parse certificate ID (format: BCL-YYYY-XXXXXX)
       const certIdMatch = certificateId.match(/^BCL-(\d{4})-(\d+)$/);
       if (!certIdMatch) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid certificate ID format",
-          status: "Invalid" 
+          status: "Invalid"
         });
       }
 
@@ -878,7 +906,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The certificate ID format is BCL-{year}-{sequence} where sequence is derived from purchase.id
       // We need to find the purchase by matching the sequence
       const allTransactions = await storage.getAllCreditTransactions();
-      
+
       let matchingTx: any = null;
       for (const tx of allTransactions) {
         const txSeq = String(tx.id).slice(-6).padStart(6, '0');
@@ -1080,28 +1108,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/buyer/filter", requireAuth, requireRole('buyer'), async (req: AuthRequest, res) => {
     try {
       const { credits_min, credits_max, plantation_type } = req.query;
-      
+
       // Get all verified projects
       let projects = await storage.getProjectsByStatus('verified');
-      
+
       // Apply filters
       if (credits_min) {
         const min = parseFloat(credits_min as string);
         projects = projects.filter(p => (p.creditsEarned || 0) >= min);
       }
-      
+
       if (credits_max) {
         const max = parseFloat(credits_max as string);
         projects = projects.filter(p => (p.creditsEarned || 0) <= max);
       }
-      
+
       if (plantation_type) {
         projects = projects.filter(p => p.plantationType === plantation_type);
       }
-      
+
       // Sort by credits_earned DESC (highest first)
       projects.sort((a, b) => (b.creditsEarned || 0) - (a.creditsEarned || 0));
-      
+
       // Return formatted response with requested fields
       const response = projects.map(p => ({
         id: p.id,
@@ -1112,7 +1140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         credits_earned: p.creditsEarned,
         carbon_avoided_tpy: p.annualCO2,
       }));
-      
+
       return res.json(response);
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
@@ -1127,15 +1155,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validated = creditPurchaseSchema.parse(req.body);
-      const { contributorId, projectId, credits } = validated;
+      const { contributorId, projectId, credits, idempotencyKey } = validated;
 
       // Atomically purchase credits - this updates buyer, contributor, and project balances
       const result = await storage.purchaseCredits(
         req.user.id,
         contributorId,
         projectId,
-        credits
+        credits,
+        idempotencyKey
       );
+
+      console.log(`[REWARD_DEBUG] Purchase successful. Buyer points: ${result.buyer.rewardPoints}, Contributor points: ${result.contributor.rewardPoints}`);
 
       // Invalidate marketplace cache — project's available credits have changed
       cache.invalidate("marketplace:verified-projects");
@@ -1174,7 +1205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const transactions = await storage.getCreditTransactionsByBuyerId(req.user.id);
-      
+
       // Enrich transactions with contributor and project details for certificate generation
       const enriched = await Promise.all(
         transactions.map(async (tx) => {
@@ -1206,7 +1237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const transactions = await storage.getCreditTransactionsByContributorId(req.user.id);
-      
+
       // Enrich transactions with buyer and project details
       const enriched = await Promise.all(
         transactions.map(async (tx) => {

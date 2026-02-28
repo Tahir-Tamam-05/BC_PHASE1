@@ -12,6 +12,19 @@
 
 ---
 
+## Architecture
+
+### Database Layer
+
+- System now uses AWS RDS PostgreSQL (persistent storage)
+- Previously in-memory storage replaced by real database
+- Drizzle ORM used for schema management
+- Enforced foreign keys and ENUM constraints
+- SSL encrypted connection to RDS
+- Atomic transaction handling for credit purchases
+
+---
+
 ## Typography System
 
 **Font Stack:**

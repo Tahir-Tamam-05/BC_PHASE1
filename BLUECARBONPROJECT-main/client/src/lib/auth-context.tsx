@@ -5,6 +5,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (user: User, token: string) => void;
+  updateUser: (user: User) => void;
+  refreshUser: () => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -18,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem('bluecarbon_user');
     const storedToken = localStorage.getItem('bluecarbon_token');
-    
+
     if (storedUser && storedUser !== 'undefined' && storedUser !== 'null' && storedToken) {
       try {
         setUser(JSON.parse(storedUser));
@@ -38,6 +40,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('bluecarbon_token', token);
   };
 
+  const updateUser = (updatedUser: User) => {
+    setUser(updatedUser);
+    localStorage.setItem('bluecarbon_user', JSON.stringify(updatedUser));
+  };
+
+  const refreshUser = async () => {
+    if (!token) return;
+    try {
+      const { apiRequest } = await import('./queryClient');
+      const response = await apiRequest('GET', '/api/auth/profile');
+      if (response.ok) {
+        const updatedUser = await response.json();
+        console.log('[AUTH_DEBUG] Refreshed user profile:', updatedUser);
+        updateUser(updatedUser);
+      }
+    } catch (error) {
+      console.error('Failed to refresh user profile:', error);
+    }
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -46,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user && !!token }}>
+    <AuthContext.Provider value={{ user, token, login, updateUser, refreshUser, logout, isAuthenticated: !!user && !!token }}>
       {children}
     </AuthContext.Provider>
   );

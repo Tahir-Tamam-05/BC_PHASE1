@@ -79,6 +79,13 @@ export default {
           DEFAULT: "hsl(var(--ocean-gradient-mid) / <alpha-value>)",
           dark: "hsl(var(--ocean-gradient-end) / <alpha-value>)",
         },
+        brand: {
+          dark: "#0F2E2B",
+          primary: "#1F7A64",
+          accent: "#3BA58F",
+          light: "#F4F6F5",
+          muted: "#A7B6B1",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],

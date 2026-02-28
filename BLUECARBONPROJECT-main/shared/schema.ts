@@ -1,6 +1,12 @@
-import { pgTable, text, varchar, integer, timestamp, real, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, real, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ENUM types for PostgreSQL
+export const userRoleEnum = pgEnum("user_role", ["admin", "verifier", "contributor", "buyer"]);
+export const projectStatusEnum = pgEnum("project_status", ["pending", "verified", "rejected", "needs_clarification"]);
+export const certificateStatusEnum = pgEnum("certificate_status", ["valid", "revoked"]);
 
 // Users table with role-based access
 export const users = pgTable("users", {
@@ -8,10 +14,11 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").notNull(), // 'admin' | 'verifier' | 'contributor' | 'buyer'
+  role: userRoleEnum("role").notNull(), // 'admin' | 'verifier' | 'contributor' | 'buyer'
   username: text("username"), // Optional legacy field
   location: text("location"), // Location for buyers and contributors
   creditsPurchased: real("credits_purchased").default(0), // For buyers - total credits purchased
+  rewardPoints: real("reward_points").default(0), // For both - Blue Points reward
   deletedAt: timestamp("deleted_at"), // Soft delete timestamp
 });
 
@@ -36,10 +43,10 @@ export const projects = pgTable(
     co2Captured: real("co2_captured").notNull(), // legacy field, now same as lifetimeCO2
     creditsEarned: real("credits_earned").notNull().default(0), // Credits available for sale (initially = lifetimeCO2)
     // Task 2.1: Added 'needs_clarification' status
-    status: text("status").notNull(), // 'pending' | 'verified' | 'rejected' | 'needs_clarification'
-    userId: varchar("user_id").notNull(),
+    status: projectStatusEnum("status").notNull(), // 'pending' | 'verified' | 'rejected' | 'needs_clarification'
+    userId: varchar("user_id").notNull().references(() => users.id),
     proofFileUrl: text("proof_file_url"),
-    verifierId: varchar("verifier_id"),
+    verifierId: varchar("verifier_id").references(() => users.id),
     rejectionReason: text("rejection_reason"),
     clarificationNote: text("clarification_note"), // Task 2.1: Separate field for clarification messages
     submittedAt: timestamp("submitted_at").notNull(),
@@ -77,10 +84,10 @@ export const transactions = pgTable(
     from: text("from").notNull(),
     to: text("to").notNull(),
     credits: real("credits").notNull(),
-    projectId: varchar("project_id").notNull(),
+    projectId: varchar("project_id").notNull().references(() => projects.id),
     timestamp: timestamp("timestamp").notNull(),
     proofHash: text("proof_hash").notNull(),
-    blockId: varchar("block_id"),
+    blockId: varchar("block_id").references(() => blocks.id),
   },
   (table) => ({
     projectIdIdx: index("transactions_project_id_idx").on(table.projectId),
@@ -109,31 +116,56 @@ export type Block = typeof blocks.$inferSelect;
 // Credit Transactions table (tracks credit purchases between buyers and contributors)
 // Task 4.1: Added indexes on buyerId, contributorId, projectId
 // Task 3.1: Added certificateStatus field for revocation tracking
+// Task 5.1: Added idempotencyKey for duplicate request protection
 export const creditTransactions = pgTable(
   "credit_transactions",
   {
     id: varchar("id").primaryKey(),
-    buyerId: varchar("buyer_id").notNull(),
-    contributorId: varchar("contributor_id").notNull(),
-    projectId: varchar("project_id").notNull(),
+    idempotencyKey: varchar("idempotency_key"), // Optional unique key to prevent duplicate purchases
+    buyerId: varchar("buyer_id").notNull().references(() => users.id),
+    contributorId: varchar("contributor_id").notNull().references(() => users.id),
+    projectId: varchar("project_id").notNull().references(() => projects.id),
     credits: real("credits").notNull(),
     timestamp: timestamp("timestamp").notNull(),
-    certificateStatus: text("certificate_status").notNull().default("valid"), // "valid" | "revoked"
+    certificateStatus: certificateStatusEnum("certificate_status").notNull().default("valid"), // "valid" | "revoked"
   },
   (table) => ({
     buyerIdIdx: index("credit_tx_buyer_id_idx").on(table.buyerId),
     contributorIdIdx: index("credit_tx_contributor_id_idx").on(table.contributorId),
     projectIdIdx: index("credit_tx_project_id_idx").on(table.projectId),
+    idempotencyKeyUnique: uniqueIndex("credit_tx_idempotency_key_idx").on(table.idempotencyKey),
   })
 );
 
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
+
+// Reward Transactions table (immutable ledger for Blue Points)
+// Task 6.1: Added for production-grade reward audit trail
+export const rewardTransactions = pgTable(
+  "reward_transactions",
+  {
+    id: varchar("id").primaryKey(),
+    userId: varchar("user_id").notNull().references(() => users.id),
+    points: real("points").notNull(),
+    type: text("type").notNull(), // "EARNED" | "REVERSAL"
+    role: text("role").notNull(), // "BUYER" | "CONTRIBUTOR"
+    sourceTransactionId: varchar("source_transaction_id").references(() => creditTransactions.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("reward_tx_user_id_idx").on(table.userId),
+    sourceTxIdx: index("reward_tx_source_tx_idx").on(table.sourceTransactionId),
+  })
+);
+
+export type RewardTransaction = typeof rewardTransactions.$inferSelect;
 
 // Credit purchase schema
 export const creditPurchaseSchema = z.object({
   contributorId: z.string().min(1, "Contributor ID is required"),
   projectId: z.string().min(1, "Project ID is required"),
   credits: z.number().positive("Credits must be positive"),
+  idempotencyKey: z.string().optional(), // Optional client-provided key for idempotency
 });
 export type CreditPurchase = z.infer<typeof creditPurchaseSchema>;
 
@@ -259,6 +291,7 @@ export const AUDIT_ACTION_TYPES = {
 
   // Credits & marketplace
   CREDITS_PURCHASED: "CREDITS_PURCHASED",
+  REWARDS_ISSUED: "REWARDS_ISSUED",
   CERTIFICATE_ISSUED: "CERTIFICATE_ISSUED",
   CERTIFICATE_REVOKED: "CERTIFICATE_REVOKED",
 

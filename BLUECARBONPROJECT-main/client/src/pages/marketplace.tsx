@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X, FileText, Eye } from 'lucide-react';
+import { ShoppingCart, Leaf, MapPin, Building2, CheckCircle2, Download, Filter, X, FileText, Eye, Award } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { SubtleOceanBackground } from '@/components/ocean-background';
 import { useAuth } from '@/lib/auth-context';
@@ -17,12 +17,12 @@ import { generateCertificatePDFWithQR, prepareCertificateData } from '@/componen
 import type { Project, CreditTransaction } from '@shared/schema';
 
 export default function Marketplace() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [purchaseAmount, setPurchaseAmount] = useState('');
   const [previewCertificate, setPreviewCertificate] = useState<any>(null);
-  
+
   // Filter state
   const [creditsMin, setCreditsMin] = useState('');
   const [creditsMax, setCreditsMax] = useState('');
@@ -51,9 +51,12 @@ export default function Marketplace() {
       const res = await apiRequest('POST', '/api/credits/purchase', data);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects/marketplace'] });
       queryClient.invalidateQueries({ queryKey: ['/api/credits/purchases'] });
+      if (data.buyer) {
+        updateUser(data.buyer);
+      }
       setSelectedProject(null);
       setPurchaseAmount('');
       toast({ title: 'Purchase successful!', description: 'Carbon credits have been added to your account' });
@@ -83,10 +86,10 @@ export default function Marketplace() {
       toast({ variant: 'destructive', title: 'Insufficient credits', description: 'Project does not have enough credits available' });
       return;
     }
-    purchaseMutation.mutate({ 
+    purchaseMutation.mutate({
       contributorId: selectedProject.userId,
-      projectId: selectedProject.id, 
-      credits 
+      projectId: selectedProject.id,
+      credits: Number(credits)
     });
   };
 
@@ -121,7 +124,7 @@ export default function Marketplace() {
                 Voluntary Carbon Credits
               </p>
               <p className="text-blue-700 dark:text-blue-300 mt-1">
-                Credits on this platform are voluntary digital representations for ESG and sustainability reporting. 
+                Credits on this platform are voluntary digital representations for ESG and sustainability reporting.
                 Upon purchase, credits are permanently retired and cannot be resold or reused.
               </p>
             </div>
@@ -144,6 +147,11 @@ export default function Marketplace() {
             title="Total Available Credits"
             value={`${availableCredits.toFixed(2)} tons`}
             icon={CheckCircle2}
+          />
+          <StatsCard
+            title="My Blue Points"
+            value={(Number(user?.rewardPoints ?? (user as any)?.reward_points ?? 0)).toFixed(0)}
+            icon={Award}
           />
         </div>
 
@@ -168,7 +176,7 @@ export default function Marketplace() {
               </Button>
             </div>
           </CardHeader>
-          
+
           {showFilters && (
             <CardContent className="border-t pt-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -183,7 +191,7 @@ export default function Marketplace() {
                     data-testid="input-credits-min"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="credits-max">Max Credits</Label>
                   <Input
@@ -195,7 +203,7 @@ export default function Marketplace() {
                     data-testid="input-credits-max"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="plantation-type">Plantation Type</Label>
                   <Select value={plantationType || undefined} onValueChange={(val) => setPlantationType(val)}>
@@ -212,7 +220,7 @@ export default function Marketplace() {
                   </Select>
                 </div>
               </div>
-              
+
               {hasFilters && (
                 <Button
                   variant="ghost"
@@ -230,7 +238,7 @@ export default function Marketplace() {
               )}
             </CardContent>
           )}
-          
+
           <CardContent>
             {projectsLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading marketplace...</div>
@@ -253,7 +261,7 @@ export default function Marketplace() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
-                      
+
                       <div className="grid grid-cols-2 gap-3">
                         <div className="p-3 bg-primary/10 rounded-md">
                           <div className="text-xs text-muted-foreground mb-1">Ecosystem</div>
@@ -364,7 +372,7 @@ export default function Marketplace() {
               <DialogTitle>Purchase Carbon Credits</DialogTitle>
               <DialogDescription>{selectedProject.name}</DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
@@ -399,6 +407,16 @@ export default function Marketplace() {
                 </p>
               </div>
 
+              {purchaseAmount && parseFloat(purchaseAmount) > 0 && (
+                <div className="p-3 rounded-md bg-primary/10 border border-primary/20 flex items-center gap-3">
+                  <Award className="w-5 h-5 text-primary" />
+                  <div className="text-sm">
+                    <p className="font-medium text-primary">Potential Reward</p>
+                    <p className="text-muted-foreground">You will earn <span className="font-bold text-primary">{(parseFloat(purchaseAmount) * 5).toFixed(0)}</span> Blue Points for this purchase!</p>
+                  </div>
+                </div>
+              )}
+
               {/* Retirement Notice - PRD Requirement */}
               <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                 <p className="text-xs text-amber-800 dark:text-amber-200">
@@ -411,8 +429,8 @@ export default function Marketplace() {
               <Button variant="outline" onClick={() => setSelectedProject(null)}>
                 Cancel
               </Button>
-              <Button 
-                onClick={handlePurchase} 
+              <Button
+                onClick={handlePurchase}
                 disabled={purchaseMutation.isPending || !purchaseAmount}
                 data-testid="button-confirm-purchase"
               >
@@ -433,7 +451,7 @@ export default function Marketplace() {
               </DialogTitle>
               <DialogDescription>Review your certificate before downloading</DialogDescription>
             </DialogHeader>
-            
+
             {(() => {
               const certData = prepareCertificateData(previewCertificate, user?.name || 'Buyer');
               return (
@@ -544,7 +562,7 @@ export default function Marketplace() {
               <Button variant="outline" onClick={() => setPreviewCertificate(null)}>
                 Close
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
                   handleDownloadCertificate(previewCertificate);
                   setPreviewCertificate(null);

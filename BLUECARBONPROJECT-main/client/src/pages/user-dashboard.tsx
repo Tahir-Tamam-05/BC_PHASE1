@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, Map, Loader2 } from 'lucide-react';
+import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, Map, Loader2, Award } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
@@ -9,7 +9,7 @@ import { ComplianceDisclaimer } from '@/components/compliance-disclaimer';
 import { useAuth } from '@/lib/auth-context';
 import { HashDisplay } from '@/components/hash-display';
 import { format } from 'date-fns';
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import { ProjectSubmissionForm } from '@/components/project-submission-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -25,8 +25,12 @@ type Sale = CreditTransaction & {
 const GISLandMap = lazy(() => import('@/components/gis-land-map'));
 
 export default function UserDashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    refreshUser();
+  }, []);
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [selectedProject, setSelectedProject] = useState<any>(null);
 
@@ -100,6 +104,11 @@ export default function UserDashboard() {
             title="Credits Sold"
             value={`${creditsSold.toFixed(2)} tons`}
             icon={ShoppingCart}
+          />
+          <StatsCard
+            title="Blue Points"
+            value={(Number(user?.rewardPoints ?? (user as any)?.reward_points ?? 0)).toFixed(0)}
+            icon={Award}
           />
           <StatsCard
             title="Verified Projects"

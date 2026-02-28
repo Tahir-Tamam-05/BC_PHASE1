@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
-import type { User, InsertUser, Project, InsertProject, Transaction, Block, CreditTransaction } from "@shared/schema";
-import { users, projects, transactions, blocks, creditTransactions } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import type { User, InsertUser, Project, InsertProject, Transaction, Block, CreditTransaction, RewardTransaction } from "@shared/schema";
+import { users, projects, transactions, blocks, creditTransactions, rewardTransactions } from "@shared/schema";
+import { eq, desc, sql } from "drizzle-orm";
 
 // Type for project creation with calculated carbon values
 export type InsertProjectWithCarbon = InsertProject & {
@@ -54,7 +54,8 @@ export interface IStorage {
   getCreditTransactionsByContributorId(contributorId: string): Promise<CreditTransaction[]>;
   createCreditTransaction(transaction: Omit<CreditTransaction, 'id'>): Promise<CreditTransaction>;
   updateCreditTransaction(id: string, updates: Partial<CreditTransaction>): Promise<CreditTransaction | undefined>;
-  purchaseCredits(buyerId: string, contributorId: string, projectId: string, credits: number): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }>;
+  purchaseCredits(buyerId: string, contributorId: string, projectId: string, credits: number, idempotencyKey?: string): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }>;
+  reverseRewardsForTransaction(transactionId: string): Promise<{ reversed: boolean; buyerId: string; contributorId: string }>;
 }
 
 export class MemStorage implements IStorage {
@@ -89,6 +90,8 @@ export class MemStorage implements IStorage {
       username: 'admin',
       location: null,
       creditsPurchased: null,
+      rewardPoints: 0,
+      deletedAt: null,
     });
 
     this.users.set(verifier1Id, {
@@ -100,6 +103,8 @@ export class MemStorage implements IStorage {
       username: 'verifier1',
       location: null,
       creditsPurchased: null,
+      rewardPoints: 0,
+      deletedAt: null,
     });
 
     this.users.set(aliceId, {
@@ -111,6 +116,8 @@ export class MemStorage implements IStorage {
       username: 'alice',
       location: 'California, USA',
       creditsPurchased: null,
+      rewardPoints: 0,
+      deletedAt: null,
     });
 
     this.users.set(bobId, {
@@ -122,6 +129,8 @@ export class MemStorage implements IStorage {
       username: 'bob',
       location: 'New York, USA',
       creditsPurchased: 0,
+      rewardPoints: 0,
+      deletedAt: null,
     });
   }
 
@@ -149,6 +158,8 @@ export class MemStorage implements IStorage {
       username: null,
       location: insertUser.location || null,
       creditsPurchased: insertUser.role === 'buyer' ? 0 : null,
+      rewardPoints: 0,
+      deletedAt: null,
     };
     this.users.set(id, user);
     return user;
@@ -204,6 +215,7 @@ export class MemStorage implements IStorage {
       landBoundary: insertProject.landBoundary || null,
       creditsEarned: 0, // Credits start at 0, will be set to lifetimeCO2 when verified
       submittedAt: new Date(),
+      deletedAt: null,
     };
     this.projects.set(id, project);
     return project;
@@ -303,10 +315,10 @@ export class MemStorage implements IStorage {
   async createCreditTransaction(transaction: Omit<CreditTransaction, 'id'>): Promise<CreditTransaction> {
     const id = randomUUID();
     // Ensure certificateStatus is set (Task 3.1)
-    const tx: CreditTransaction = { 
-      ...transaction, 
-      id, 
-      certificateStatus: transaction.certificateStatus || 'valid' 
+    const tx: CreditTransaction = {
+      ...transaction,
+      id,
+      certificateStatus: transaction.certificateStatus || 'valid'
     };
     this.creditTransactions.set(id, tx);
     return tx;
@@ -324,8 +336,31 @@ export class MemStorage implements IStorage {
     buyerId: string,
     contributorId: string,
     projectId: string,
-    credits: number
+    credits: number,
+    idempotencyKey?: string
   ): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }> {
+    // Check for duplicate request using idempotency key
+    if (idempotencyKey) {
+      for (const tx of this.creditTransactions.values()) {
+        if (tx.idempotencyKey === idempotencyKey) {
+          // Return existing transaction without re-issuing rewards
+          const existingBuyer = this.users.get(buyerId);
+          const existingContributor = this.users.get(contributorId);
+          const existingProject = this.projects.get(projectId);
+          if (!existingBuyer || !existingContributor || !existingProject) {
+            throw new Error('Transaction data not found');
+          }
+          console.log(`[MEM_STORAGE_DEBUG] Duplicate request detected for idempotencyKey: ${idempotencyKey}. Returning existing transaction.`);
+          return {
+            buyer: existingBuyer,
+            contributor: existingContributor,
+            project: existingProject,
+            transaction: tx,
+          };
+        }
+      }
+    }
+
     // Get buyer, contributor, and project
     const buyer = this.users.get(buyerId);
     const contributor = this.users.get(contributorId);
@@ -366,6 +401,7 @@ export class MemStorage implements IStorage {
     // Create transaction record
     const transaction: CreditTransaction = {
       id: randomUUID(),
+      idempotencyKey: idempotencyKey || null,
       buyerId,
       contributorId,
       projectId,
@@ -374,17 +410,70 @@ export class MemStorage implements IStorage {
       certificateStatus: 'valid', // Task 3.1: Default status
     };
 
+    // Calculate Blue Points: 20 BP for contributor, 5 BP for buyer
+    const contributorPointsEarned = (Number(credits) || 0) * 20;
+    const buyerPointsEarned = (Number(credits) || 0) * 5;
+
+    const updatedBuyerWithPoints = {
+      ...updatedBuyer,
+      rewardPoints: Number(buyer.rewardPoints || 0) + buyerPointsEarned,
+    };
+    const updatedContributorWithPoints = {
+      ...contributor,
+      rewardPoints: Number(contributor.rewardPoints || 0) + contributorPointsEarned,
+    };
+
     // Persist changes
     this.projects.set(projectId, updatedProject);
-    this.users.set(buyerId, updatedBuyer);
+    this.users.set(buyerId, updatedBuyerWithPoints);
+    this.users.set(contributorId, updatedContributorWithPoints);
     this.creditTransactions.set(transaction.id, transaction);
 
+    console.log(`[MEM_STORAGE_DEBUG] Updated rewardPoints: Buyer=${updatedBuyerWithPoints.rewardPoints}, Contributor=${updatedContributorWithPoints.rewardPoints}`);
+
     return {
-      buyer: updatedBuyer,
-      contributor,
+      buyer: updatedBuyerWithPoints,
+      contributor: updatedContributorWithPoints,
       project: updatedProject,
       transaction,
     };
+  }
+
+  // Reverse rewards for a credit transaction (internal method)
+  async reverseRewardsForTransaction(transactionId: string): Promise<{ reversed: boolean; buyerId: string; contributorId: string }> {
+    // Find the credit transaction
+    const creditTx = this.creditTransactions.get(transactionId);
+    if (!creditTx) {
+      return { reversed: false, buyerId: '', contributorId: '' };
+    }
+
+    const buyerId = creditTx.buyerId;
+    const contributorId = creditTx.contributorId;
+
+    // Calculate points to reverse (same as original purchase)
+    const buyerPointsToReverse = (creditTx.credits || 0) * 5;
+    const contributorPointsToReverse = (creditTx.credits || 0) * 20;
+
+    // Reverse buyer's reward points
+    const buyer = this.users.get(buyerId);
+    if (buyer) {
+      this.users.set(buyerId, {
+        ...buyer,
+        rewardPoints: Math.max(0, (buyer.rewardPoints || 0) - buyerPointsToReverse),
+      });
+    }
+
+    // Reverse contributor's reward points
+    const contributor = this.users.get(contributorId);
+    if (contributor) {
+      this.users.set(contributorId, {
+        ...contributor,
+        rewardPoints: Math.max(0, (contributor.rewardPoints || 0) - contributorPointsToReverse),
+      });
+    }
+
+    console.log(`[MEM_STORAGE_DEBUG] Reversed rewards for transaction: ${transactionId}`);
+    return { reversed: true, buyerId, contributorId };
   }
 }
 
@@ -618,9 +707,10 @@ export class DbStorage implements IStorage {
     buyerId: string,
     contributorId: string,
     projectId: string,
-    credits: number
+    credits: number,
+    idempotencyKey?: string
   ): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }> {
-    // Get buyer, contributor, and project
+    // Get buyer, contributor, and project (validation only - not in transaction)
     const [buyer] = await this.db.select().from(users).where(eq(users.id, buyerId));
     const [contributor] = await this.db.select().from(users).where(eq(users.id, contributorId));
     const [project] = await this.db.select().from(projects).where(eq(projects.id, projectId));
@@ -643,44 +733,203 @@ export class DbStorage implements IStorage {
     if (credits <= 0) {
       throw new Error('Credits must be positive');
     }
-    if ((project.creditsEarned || 0) < credits) {
-      throw new Error('Insufficient credits available');
+
+    // PART 3 & 4: Wrap ALL database mutations in a transaction for atomicity
+    // Credit validation and deduction happen INSIDE the transaction with row-level locking
+    const result = await this.db.transaction(async (tx: any) => {
+      // Fetch project with FOR UPDATE to lock the row (prevents race conditions)
+      const [lockedProject] = await tx
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .forUpdate();
+
+      // PART 4: Validate credit availability INSIDE transaction
+      if (!lockedProject || (lockedProject.creditsEarned || 0) < credits) {
+        throw new Error('Insufficient credits available');
+      }
+
+      // Attempt to insert transaction record first (for atomic idempotency)
+      const transactionId = randomUUID();
+      
+      try {
+        const [createdTransaction] = await tx
+          .insert(creditTransactions)
+          .values({
+            id: transactionId,
+            idempotencyKey: idempotencyKey || null,
+            buyerId,
+            contributorId,
+            projectId,
+            credits,
+            timestamp: new Date(),
+          })
+          .returning();
+
+        // PART 4: Safe credit deduction inside transaction (uses locked row value)
+        const [updatedProject] = await tx
+          .update(projects)
+          .set({ creditsEarned: (lockedProject.creditsEarned || 0) - credits })
+          .where(eq(projects.id, projectId))
+          .returning();
+
+        // Update buyer credits and reward points (5 BP/credit)
+        const [updatedBuyer] = await tx
+          .update(users)
+          .set({
+            creditsPurchased: sql`COALESCE(${users.creditsPurchased}, 0) + ${credits}`,
+            rewardPoints: sql`COALESCE(${users.rewardPoints}, 0) + ${credits * 5}`
+          })
+          .where(eq(users.id, buyerId))
+          .returning();
+
+        // Update contributor reward points (20 BP/credit)
+        const [updatedContributor] = await tx
+          .update(users)
+          .set({
+            rewardPoints: sql`COALESCE(${users.rewardPoints}, 0) + ${credits * 20}`
+          })
+          .where(eq(users.id, contributorId))
+          .returning();
+
+        // Insert reward transaction record for buyer (5 BP)
+        const buyerPoints = credits * 5;
+        await tx
+          .insert(rewardTransactions)
+          .values({
+            id: randomUUID(),
+            userId: buyerId,
+            points: buyerPoints,
+            type: "EARNED",
+            role: "BUYER",
+            sourceTransactionId: createdTransaction.id,
+            createdAt: new Date(),
+          });
+
+        // Insert reward transaction record for contributor (20 BP)
+        const contributorPoints = credits * 20;
+        await tx
+          .insert(rewardTransactions)
+          .values({
+            id: randomUUID(),
+            userId: contributorId,
+            points: contributorPoints,
+            type: "EARNED",
+            role: "CONTRIBUTOR",
+            sourceTransactionId: createdTransaction.id,
+            createdAt: new Date(),
+          });
+
+        return {
+          buyer: updatedBuyer,
+          contributor: updatedContributor,
+          project: updatedProject,
+          transaction: createdTransaction,
+        };
+      } catch (error: any) {
+        // Check if error is due to unique constraint violation on idempotencyKey
+        if (idempotencyKey && error?.code === '23505') {
+          // Unique constraint violation - fetch existing transaction
+          const [existingTx] = await tx
+            .select()
+            .from(creditTransactions)
+            .where(eq(creditTransactions.idempotencyKey, idempotencyKey));
+
+          if (existingTx) {
+            console.log(`[DB_STORAGE_DEBUG] Duplicate request detected for idempotencyKey: ${idempotencyKey}. Returning existing transaction.`);
+            return {
+              buyer,
+              contributor,
+              project,
+              transaction: existingTx,
+            };
+          }
+        }
+        // Re-throw if not an idempotency-related error
+        throw error;
+      }
+    });
+
+    console.log(`[DB_STORAGE_DEBUG] Updated rewardPoints: Buyer=${result.buyer.rewardPoints}, Contributor=${result.contributor.rewardPoints}`);
+
+    return result;
+  }
+
+  // Reverse rewards for a credit transaction (internal method)
+  async reverseRewardsForTransaction(transactionId: string): Promise<{ reversed: boolean; buyerId: string; contributorId: string }> {
+    // Find reward transactions linked to this credit transaction
+    const rewardTxns = await this.db
+      .select()
+      .from(rewardTransactions)
+      .where(eq(rewardTransactions.sourceTransactionId, transactionId));
+
+    if (rewardTxns.length === 0) {
+      return { reversed: false, buyerId: '', contributorId: '' };
     }
 
-    // Create transaction record
-    const transactionId = randomUUID();
-    const [createdTransaction] = await this.db
-      .insert(creditTransactions)
-      .values({
-        id: transactionId,
-        buyerId,
-        contributorId,
-        projectId,
-        credits,
-        timestamp: new Date(),
-      })
-      .returning();
+    // PART 2: Check if already reversed (double reversal prevention)
+    const alreadyReversed = rewardTxns.some(r => r.type === 'REVERSAL');
+    if (alreadyReversed) {
+      console.log(`[DB_STORAGE_DEBUG] Transaction ${transactionId} already reversed. Skipping.`);
+      return { reversed: false, buyerId: '', contributorId: '' };
+    }
 
-    // Update project credits
-    const [updatedProject] = await this.db
-      .update(projects)
-      .set({ creditsEarned: (project.creditsEarned || 0) - credits })
-      .where(eq(projects.id, projectId))
-      .returning();
+    // Get buyer and contributor IDs
+    const buyerReward = rewardTxns.find(r => r.role === 'BUYER');
+    const contributorReward = rewardTxns.find(r => r.role === 'CONTRIBUTOR');
 
-    // Update buyer credits
-    const [updatedBuyer] = await this.db
-      .update(users)
-      .set({ creditsPurchased: (buyer.creditsPurchased || 0) + credits })
-      .where(eq(users.id, buyerId))
-      .returning();
+    if (!buyerReward || !contributorReward) {
+      return { reversed: false, buyerId: '', contributorId: '' };
+    }
 
-    return {
-      buyer: updatedBuyer,
-      contributor,
-      project: updatedProject,
-      transaction: createdTransaction,
-    };
+    const buyerId = buyerReward.userId;
+    const contributorId = contributorReward.userId;
+
+    // Reverse all rewards in a transaction
+    await this.db.transaction(async (tx: any) => {
+      // Reverse buyer's reward points
+      await tx
+        .insert(rewardTransactions)
+        .values({
+          id: randomUUID(),
+          userId: buyerId,
+          points: -buyerReward.points,
+          type: "REVERSAL",
+          role: "BUYER",
+          sourceTransactionId: transactionId,
+          createdAt: new Date(),
+        });
+
+      await tx
+        .update(users)
+        .set({
+          rewardPoints: sql`COALESCE(${users.rewardPoints}, 0) - ${buyerReward.points}`
+        })
+        .where(eq(users.id, buyerId));
+
+      // Reverse contributor's reward points
+      await tx
+        .insert(rewardTransactions)
+        .values({
+          id: randomUUID(),
+          userId: contributorId,
+          points: -contributorReward.points,
+          type: "REVERSAL",
+          role: "CONTRIBUTOR",
+          sourceTransactionId: transactionId,
+          createdAt: new Date(),
+        });
+
+      await tx
+        .update(users)
+        .set({
+          rewardPoints: sql`COALESCE(${users.rewardPoints}, 0) - ${contributorReward.points}`
+        })
+        .where(eq(users.id, contributorId));
+    });
+
+    console.log(`[DB_STORAGE_DEBUG] Reversed rewards for transaction: ${transactionId}`);
+    return { reversed: true, buyerId, contributorId };
   }
 }
 
