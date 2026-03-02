@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import type { User, InsertUser, Project, InsertProject, Transaction, Block, CreditTransaction, RewardTransaction } from "@shared/schema";
 import { users, projects, transactions, blocks, creditTransactions, rewardTransactions } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray, and } from "drizzle-orm";
 
 // Type for project creation with calculated carbon values
 export type InsertProjectWithCarbon = InsertProject & {
@@ -26,6 +26,7 @@ export interface IStorage {
   getProjectsByUserId(userId: string): Promise<Project[]>;
   getProjectsByStatus(status: string): Promise<Project[]>;
   getProjectsByVerifierId(verifierId: string): Promise<Project[]>;
+  getVerifiedProjectsByVerifierId(verifierId: string): Promise<Project[]>;
   getAllProjects(): Promise<Project[]>;
   createProject(project: InsertProjectWithCarbon): Promise<Project>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined>;
@@ -54,8 +55,18 @@ export interface IStorage {
   getCreditTransactionsByContributorId(contributorId: string): Promise<CreditTransaction[]>;
   createCreditTransaction(transaction: Omit<CreditTransaction, 'id'>): Promise<CreditTransaction>;
   updateCreditTransaction(id: string, updates: Partial<CreditTransaction>): Promise<CreditTransaction | undefined>;
-  purchaseCredits(buyerId: string, contributorId: string, projectId: string, credits: number, idempotencyKey?: string): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }>;
+  purchaseCredits(buyerId: string, contributorId: string, projectId: string, credits: number, amount: number, idempotencyKey?: string): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }>;
   reverseRewardsForTransaction(transactionId: string): Promise<{ reversed: boolean; buyerId: string; contributorId: string }>;
+
+  // Admin Ledger & Governance
+  getTopBuyers(): Promise<any[]>;
+  getTopContributors(): Promise<any[]>;
+  getAdminLedger(): Promise<any[]>;
+  issueWarning(data: { contributorId: string; message: string; severity: string }): Promise<any>;
+  getWarningsByContributorId(contributorId: string): Promise<any[]>;
+  setMintingStatus(enabled: boolean): Promise<void>;
+  getMintingStatus(): Promise<boolean>;
+  rollbackAction(data: { adminId: string; targetId: string; type: string; reason: string }): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -64,6 +75,9 @@ export class MemStorage implements IStorage {
   private transactions: Map<string, Transaction>;
   private blocks: Map<string, Block>;
   private creditTransactions: Map<string, CreditTransaction>;
+  private systemSettings: { mintingEnabled: boolean };
+  private warnings: Map<string, any>;
+  private rollbacks: Map<string, any>;
 
   constructor() {
     this.users = new Map();
@@ -71,6 +85,9 @@ export class MemStorage implements IStorage {
     this.transactions = new Map();
     this.blocks = new Map();
     this.creditTransactions = new Map();
+    this.warnings = new Map();
+    this.rollbacks = new Map();
+    this.systemSettings = { mintingEnabled: true };
     this.initializeData();
   }
 
@@ -154,7 +171,7 @@ export class MemStorage implements IStorage {
       ...insertUser,
       id,
       password: hashedPassword,
-      role: insertUser.role || 'contributor',
+      role: (insertUser.role as any) || 'contributor',
       username: null,
       location: insertUser.location || null,
       creditsPurchased: insertUser.role === 'buyer' ? 0 : null,
@@ -197,6 +214,13 @@ export class MemStorage implements IStorage {
     return Array.from(this.projects.values()).filter((p) => p.verifierId === verifierId);
   }
 
+  async getVerifiedProjectsByVerifierId(verifierId: string): Promise<Project[]> {
+    const statuses = ["verified", "rejected", "needs_clarification"];
+    return Array.from(this.projects.values()).filter(
+      (p) => p.verifierId === verifierId && statuses.includes(p.status)
+    ).sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+  }
+
   async getAllProjects(): Promise<Project[]> {
     return Array.from(this.projects.values());
   }
@@ -215,6 +239,7 @@ export class MemStorage implements IStorage {
       landBoundary: insertProject.landBoundary || null,
       creditsEarned: 0, // Credits start at 0, will be set to lifetimeCO2 when verified
       submittedAt: new Date(),
+      isListed: true,
       deletedAt: null,
     };
     this.projects.set(id, project);
@@ -337,6 +362,7 @@ export class MemStorage implements IStorage {
     contributorId: string,
     projectId: string,
     credits: number,
+    amount: number,
     idempotencyKey?: string
   ): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }> {
     // Check for duplicate request using idempotency key
@@ -406,9 +432,27 @@ export class MemStorage implements IStorage {
       contributorId,
       projectId,
       credits,
+      amount: amount || 0,
       timestamp: new Date(),
-      certificateStatus: 'valid', // Task 3.1: Default status
+      certificateStatus: 'valid' as any, // Task 3.1: Default status
     };
+
+    // Add to ledger (Task: Admin Ledger)
+    const ledgerTx: any = {
+      id: randomUUID(),
+      txId: `TX-${Date.now()}`,
+      from: buyerId,
+      to: contributorId,
+      credits,
+      projectId,
+      timestamp: new Date(),
+      proofHash: 'N/A',
+      type: 'Buy',
+      buyerId,
+      contributorId,
+      status: 'Completed'
+    };
+    this.transactions.set(ledgerTx.id, ledgerTx);
 
     // Calculate Blue Points: 20 BP for contributor, 5 BP for buyer
     const contributorPointsEarned = (Number(credits) || 0) * 20;
@@ -475,6 +519,64 @@ export class MemStorage implements IStorage {
     console.log(`[MEM_STORAGE_DEBUG] Reversed rewards for transaction: ${transactionId}`);
     return { reversed: true, buyerId, contributorId };
   }
+
+  async getTopBuyers(): Promise<any[]> {
+    const buyerMap = new Map<string, any>();
+    for (const tx of this.creditTransactions.values()) {
+      const buyer = this.users.get(tx.buyerId);
+      if (!buyer) continue;
+      const stats = buyerMap.get(tx.buyerId) || { id: tx.buyerId, name: buyer.name, credits: 0, amount: 0 };
+      stats.credits += tx.credits;
+      stats.amount += tx.amount || 0;
+      buyerMap.set(tx.buyerId, stats);
+    }
+    return Array.from(buyerMap.values()).sort((a, b) => b.credits - a.credits);
+  }
+
+  async getTopContributors(): Promise<any[]> {
+    const contributorMap = new Map<string, any>();
+    for (const project of this.projects.values()) {
+      const stats = contributorMap.get(project.userId) || { id: project.userId, name: (this.users.get(project.userId)?.name || 'Unknown'), projects: 0, credits: 0 };
+      stats.projects += 1;
+      stats.credits += project.lifetimeCO2;
+      contributorMap.set(project.userId, stats);
+    }
+    return Array.from(contributorMap.values()).sort((a, b) => b.credits - a.credits);
+  }
+
+  async getAdminLedger(): Promise<any[]> {
+    return Array.from(this.transactions.values()).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+
+  async issueWarning(data: { contributorId: string; message: string; severity: string }): Promise<any> {
+    const id = randomUUID();
+    const warning = { ...data, id, date: new Date() };
+    this.warnings.set(id, warning);
+    return warning;
+  }
+
+  async getWarningsByContributorId(contributorId: string): Promise<any[]> {
+    return Array.from(this.warnings.values()).filter(w => w.contributorId === contributorId);
+  }
+
+  async setMintingStatus(enabled: boolean): Promise<void> {
+    this.systemSettings.mintingEnabled = enabled;
+  }
+
+  async getMintingStatus(): Promise<boolean> {
+    return this.systemSettings.mintingEnabled;
+  }
+
+  async rollbackAction(data: { adminId: string; targetId: string; type: string; reason: string }): Promise<void> {
+    const id = randomUUID();
+    const rollback = { ...data, id, timestamp: new Date() };
+    this.rollbacks.set(id, rollback);
+    // Logic for actual rollback would go here (e.g. updating transaction status)
+    const tx = this.transactions.get(data.targetId) || Array.from(this.transactions.values()).find(t => t.id === data.targetId || t.txId === data.targetId);
+    if (tx) {
+      tx.status = 'Rolled Back';
+    }
+  }
 }
 
 // Database Storage implementation using Drizzle ORM
@@ -510,7 +612,7 @@ export class DbStorage implements IStorage {
         ...insertUser,
         id,
         password: hashedPassword,
-        role: insertUser.role || 'contributor',
+        role: (insertUser.role as any) || 'contributor',
         username: null,
       })
       .returning();
@@ -522,7 +624,7 @@ export class DbStorage implements IStorage {
   }
 
   async getUsersByRole(role: string): Promise<User[]> {
-    return await this.db.select().from(users).where(eq(users.role, role));
+    return await this.db.select().from(users).where(eq(users.role, role as any));
   }
 
   async getProject(id: string): Promise<Project | undefined> {
@@ -535,11 +637,24 @@ export class DbStorage implements IStorage {
   }
 
   async getProjectsByStatus(status: string): Promise<Project[]> {
-    return await this.db.select().from(projects).where(eq(projects.status, status));
+    return await this.db.select().from(projects).where(eq(projects.status, status as any));
   }
 
   async getProjectsByVerifierId(verifierId: string): Promise<Project[]> {
     return await this.db.select().from(projects).where(eq(projects.verifierId, verifierId));
+  }
+
+  async getVerifiedProjectsByVerifierId(verifierId: string): Promise<Project[]> {
+    return await this.db
+      .select()
+      .from(projects)
+      .where(
+        and(
+          eq(projects.verifierId, verifierId),
+          inArray(projects.status, ["verified", "rejected", "needs_clarification"])
+        )
+      )
+      .orderBy(desc(projects.submittedAt));
   }
 
   async getAllProjects(): Promise<Project[]> {
@@ -708,6 +823,7 @@ export class DbStorage implements IStorage {
     contributorId: string,
     projectId: string,
     credits: number,
+    amount: number,
     idempotencyKey?: string
   ): Promise<{ buyer: User; contributor: User; project: Project; transaction: CreditTransaction }> {
     // Get buyer, contributor, and project (validation only - not in transaction)
@@ -751,7 +867,7 @@ export class DbStorage implements IStorage {
 
       // Attempt to insert transaction record first (for atomic idempotency)
       const transactionId = randomUUID();
-      
+
       try {
         const [createdTransaction] = await tx
           .insert(creditTransactions)
@@ -762,9 +878,28 @@ export class DbStorage implements IStorage {
             contributorId,
             projectId,
             credits,
+            amount: amount || 0,
             timestamp: new Date(),
           })
           .returning();
+
+        // Add to ledger
+        await tx
+          .insert(transactions)
+          .values({
+            id: randomUUID(),
+            txId: `TX-${Date.now()}`,
+            from: buyerId,
+            to: contributorId,
+            credits,
+            projectId,
+            timestamp: new Date(),
+            proofHash: 'N/A',
+            type: 'Buy',
+            buyerId,
+            contributorId,
+            status: 'Completed'
+          });
 
         // PART 4: Safe credit deduction inside transaction (uses locked row value)
         const [updatedProject] = await tx
@@ -868,15 +1003,15 @@ export class DbStorage implements IStorage {
     }
 
     // PART 2: Check if already reversed (double reversal prevention)
-    const alreadyReversed = rewardTxns.some(r => r.type === 'REVERSAL');
+    const alreadyReversed = rewardTxns.some((r: any) => r.type === 'REVERSAL');
     if (alreadyReversed) {
       console.log(`[DB_STORAGE_DEBUG] Transaction ${transactionId} already reversed. Skipping.`);
       return { reversed: false, buyerId: '', contributorId: '' };
     }
 
     // Get buyer and contributor IDs
-    const buyerReward = rewardTxns.find(r => r.role === 'BUYER');
-    const contributorReward = rewardTxns.find(r => r.role === 'CONTRIBUTOR');
+    const buyerReward = rewardTxns.find((r: any) => r.role === 'BUYER');
+    const contributorReward = rewardTxns.find((r: any) => r.role === 'CONTRIBUTOR');
 
     if (!buyerReward || !contributorReward) {
       return { reversed: false, buyerId: '', contributorId: '' };
@@ -930,6 +1065,115 @@ export class DbStorage implements IStorage {
 
     console.log(`[DB_STORAGE_DEBUG] Reversed rewards for transaction: ${transactionId}`);
     return { reversed: true, buyerId, contributorId };
+  }
+
+  async getTopBuyers(): Promise<any[]> {
+    const results = await this.db
+      .select({
+        id: creditTransactions.buyerId,
+        name: users.name,
+        credits: sql<number>`sum(${creditTransactions.credits})`,
+        amount: sql<number>`sum(${creditTransactions.amount})`,
+      })
+      .from(creditTransactions)
+      .innerJoin(users, eq(creditTransactions.buyerId, users.id))
+      .groupBy(creditTransactions.buyerId, users.name)
+      .orderBy(desc(sql`sum(${creditTransactions.credits})`));
+    return results;
+  }
+
+  async getTopContributors(): Promise<any[]> {
+    const results = await this.db
+      .select({
+        id: projects.userId,
+        name: users.name,
+        projectsCount: sql<number>`count(${projects.id})`,
+        credits: sql<number>`sum(${projects.lifetimeCO2})`,
+      })
+      .from(projects)
+      .innerJoin(users, eq(projects.userId, users.id))
+      .groupBy(projects.userId, users.name)
+      .orderBy(desc(sql`sum(${projects.lifetimeCO2})`));
+    return results;
+  }
+
+  async getAdminLedger(): Promise<any[]> {
+    const results = await this.db
+      .select({
+        id: transactions.id,
+        txId: transactions.txId,
+        timestamp: transactions.timestamp,
+        type: transactions.type,
+        credits: transactions.credits,
+        status: transactions.status,
+        projectName: projects.name,
+        contributorName: users.name,
+        buyerId: transactions.buyerId,
+      })
+      .from(transactions)
+      .leftJoin(projects, eq(transactions.projectId, projects.id))
+      .leftJoin(users, eq(transactions.contributorId, users.id))
+      .orderBy(desc(transactions.timestamp));
+
+    // Fetch buyer names separately to avoid complex self-joins or multiple joins if needed,
+    // but a simple map works too.
+    const buyerIds = results.map((r: any) => r.buyerId).filter(Boolean);
+    let buyerUsers: any[] = [];
+    if (buyerIds.length > 0) {
+      // Use a safe IN clause with proper array handling
+      buyerUsers = await this.db
+        .select()
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(buyerIds, sql`, `)})`);
+    }
+    const buyerMap = new Map(buyerUsers.map((u: any) => [u.id, u.name]));
+
+    return results.map((r: any) => ({
+      ...r,
+      buyerName: buyerMap.get(r.buyerId) || '—'
+    }));
+  }
+
+  async issueWarning(data: { contributorId: string; message: string; severity: string }): Promise<any> {
+    const { warnings: warningsTable } = await import("@shared/schema");
+    const id = randomUUID();
+    const [warning] = await this.db
+      .insert(warningsTable)
+      .values({ ...data, id, date: new Date() })
+      .returning();
+    return warning;
+  }
+
+  async getWarningsByContributorId(contributorId: string): Promise<any[]> {
+    const { warnings: warningsTable } = await import("@shared/schema");
+    return await this.db.select().from(warningsTable).where(eq(warningsTable.contributorId, contributorId));
+  }
+
+  async setMintingStatus(enabled: boolean): Promise<void> {
+    const { systemSettings: settingsTable } = await import("@shared/schema");
+    const [existing] = await this.db.select().from(settingsTable).where(eq(settingsTable.id, 'global'));
+    if (existing) {
+      await this.db.update(settingsTable).set({ mintingEnabled: enabled }).where(eq(settingsTable.id, 'global'));
+    } else {
+      await this.db.insert(settingsTable).values({ id: 'global', mintingEnabled: enabled });
+    }
+  }
+
+  async getMintingStatus(): Promise<boolean> {
+    const { systemSettings: settingsTable } = await import("@shared/schema");
+    const [settings] = await this.db.select().from(settingsTable).where(eq(settingsTable.id, 'global'));
+    return settings ? settings.mintingEnabled : true;
+  }
+
+  async rollbackAction(data: { adminId: string; targetId: string; type: string; reason: string }): Promise<void> {
+    const { rollbacks: rollbacksTable, transactions: transactionsTable } = await import("@shared/schema");
+    const id = randomUUID();
+    await this.db.insert(rollbacksTable).values({ ...data, id, timestamp: new Date() });
+
+    await this.db
+      .update(transactionsTable)
+      .set({ status: 'Rolled Back' })
+      .where(sql`${transactionsTable.id} = ${data.targetId} OR ${transactionsTable.txId} = ${data.targetId}`);
   }
 }
 

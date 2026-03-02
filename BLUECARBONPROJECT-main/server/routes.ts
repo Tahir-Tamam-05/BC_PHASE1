@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
-import { loginSchema, signupSchema, projectReviewSchema, projectSubmissionSchema, creditPurchaseSchema, AUDIT_ACTION_TYPES } from "@shared/schema";
+import { loginSchema, signupSchema, projectReviewSchema, projectSubmissionSchema, creditPurchaseSchema, AUDIT_ACTION_TYPES, type Project, type Transaction } from "@shared/schema";
 import { generateToken, requireAuth, requireRole, type AuthRequest } from "./auth";
 import {
   computeTransactionId,
@@ -16,6 +16,10 @@ import {
 import { sha256 } from "js-sha256";
 import { calculateCarbonSequestration } from "./carbonCalculation";
 import { audit } from "./auditLog";
+
+// UUID validation regex - matches standard UUID format
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUUID = (id: string): boolean => UUID_REGEX.test(id);
 
 // ─── Fallback for turf ────────────────────────────────────────────────────────
 let turf: any = null;
@@ -588,8 +592,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/projects", async (req, res) => {
     try {
-      const projects = await storage.getAllProjects();
-      return res.json(projects);
+      const { limit, offset } = parsePaginationParams(req);
+      const allProjects = await storage.getAllProjects();
+      const total = allProjects.length;
+      
+      // Sort by submittedAt descending (newest first)
+      const sorted = [...allProjects].sort((a, b) => 
+        new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+      );
+      
+      const paginatedProjects = sorted.slice(offset, offset + limit);
+      
+      return res.json({
+        data: paginatedProjects,
+        pagination: getPaginationMeta(total, limit, offset),
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -618,13 +635,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get verifier's assigned reviews - Protected (verifier only)
-  app.get("/api/projects/my-reviews", requireAuth, requireRole('verifier'), async (req: AuthRequest, res) => {
+  // Get verifier's assigned reviews - Protected (verifier/admin only)
+  app.get("/api/projects/my-reviews", requireAuth, requireRole('verifier', 'admin'), async (req: AuthRequest, res) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: "Authentication required" });
       }
-      const projects = await storage.getProjectsByVerifierId(req.user.id);
+      console.log("Fetching history for verifier:", req.user.id);
+      const projects = await storage.getVerifiedProjectsByVerifierId(req.user.id);
+      console.log("Projects found:", projects.length);
       return res.json(projects);
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
@@ -661,6 +680,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
       });
 
+      // Day 4: Check if minting is enabled before approving
+      if (action === "approve") {
+        const mintingEnabled = await storage.getMintingStatus();
+        if (!mintingEnabled) {
+          return res.status(403).json({
+            error: "Minting temporarily disabled by admin. Approval not allowed at this time.",
+            mintingEnabled: false
+          });
+        }
+      }
+
       const project = await storage.getProject(id);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
@@ -694,6 +724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "rejected",
           rejectionReason: rejectionReason + (comment ? `: ${comment}` : ""),
           clarificationNote: null,
+          verifierId: req.user?.id,
         });
         // Audit: project rejected
         await audit({
@@ -722,6 +753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "needs_clarification",
           clarificationNote,
           rejectionReason: null,
+          verifierId: req.user?.id,
         });
         // Audit: clarification requested
         await audit({
@@ -767,6 +799,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp,
         proofHash,
         blockId: null,
+        status: 'Completed',
+        type: 'Mint',
+        buyerId: null,
+        contributorId: project.userId,
       });
 
       const pendingTransactions = await storage.getAllTransactions();
@@ -809,7 +845,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.updateProject(id, {
         status: "verified",
-        creditsEarned: project.lifetimeCO2, // Set credits available for purchase
+        creditsEarned: project.lifetimeCO2,
+        verifierId: req.user?.id,
       });
 
       // Invalidate marketplace cache so buyers see the newly verified project
@@ -954,10 +991,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── PAGINATION HELPERS ───────────────────────────────────────────────────────
+  const DEFAULT_LIMIT = 20;
+  const MAX_LIMIT = 100;
+
+  function parsePaginationParams(req: any) {
+    const limit = Math.min(
+      parseInt(req.query.limit) || DEFAULT_LIMIT,
+      MAX_LIMIT
+    );
+    const offset = parseInt(req.query.offset) || 0;
+    return { limit, offset };
+  }
+
+  function getPaginationMeta(total: number, limit: number, offset: number) {
+    return {
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    };
+  }
+
   app.get("/api/transactions", async (req, res) => {
     try {
-      const transactions = await storage.getAllTransactions();
-      return res.json(transactions);
+      const { limit, offset } = parsePaginationParams(req);
+      const allTransactions = await storage.getAllTransactions();
+      const total = allTransactions.length;
+      
+      // Sort by timestamp descending (newest first)
+      const sorted = [...allTransactions].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      
+      const paginatedTransactions = sorted.slice(offset, offset + limit);
+      
+      return res.json({
+        data: paginatedTransactions,
+        pagination: getPaginationMeta(total, limit, offset),
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -977,8 +1049,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/blocks", async (req, res) => {
     try {
-      const blocks = await storage.getAllBlocks();
-      return res.json(blocks);
+      const { limit, offset } = parsePaginationParams(req);
+      const allBlocks = await storage.getAllBlocks();
+      const total = allBlocks.length;
+      
+      // Sort by index descending (newest first)
+      const sorted = [...allBlocks].sort((a, b) => b.index - a.index);
+      
+      const paginatedBlocks = sorted.slice(offset, offset + limit);
+      
+      return res.json({
+        data: paginatedBlocks,
+        pagination: getPaginationMeta(total, limit, offset),
+      });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
@@ -1079,6 +1162,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // VERIFIER DASHBOARD STATUS (Improved Performance & Stats)
+  app.get("/api/verifier/status", requireAuth, requireRole('verifier', 'admin'), async (req: AuthRequest, res) => {
+    try {
+      const mintingEnabled = await storage.getMintingStatus();
+
+      // Get verified and rejected projects by this verifier
+      const myReviews = await storage.getVerifiedProjectsByVerifierId(req.user!.id);
+      // Enhanced performance aggregation
+      const verifiedProjects = myReviews.filter(p => p.status === 'verified');
+      const rejectedProjects = myReviews.filter(p => p.status === 'rejected');
+
+      const totalCO2 = verifiedProjects.reduce((sum, p) => sum + (p.co2Captured || 0), 0);
+
+      // Average review time calculation - using submittedAt as a base
+      let avgReviewDays = 0;
+      if (myReviews.length > 0) {
+        const totalMs = myReviews.reduce((sum, p) => {
+          const start = new Date(p.submittedAt).getTime();
+          const end = Date.now(); // Fallback estimate since project is finalized
+          return sum + (end - start);
+        }, 0);
+        avgReviewDays = totalMs / myReviews.length / (1000 * 60 * 60 * 24);
+      }
+
+      // Trust Score: verified projects / (verified + rejected) or 100%
+      const totalReviews = verifiedProjects.length + rejectedProjects.length;
+      const trustScore = totalReviews > 0
+        ? Math.round((verifiedProjects.length / totalReviews) * 100)
+        : 100;
+
+      const warnings = await storage.getWarningsByContributorId(req.user!.id);
+
+      return res.json({
+        mintingEnabled,
+        trustScore,
+        warningCount: warnings.length,
+        performance: {
+          verified: verifiedProjects.length,
+          rejected: rejectedProjects.length,
+          totalCO2: Math.round(totalCO2 * 100) / 100,
+          avgReviewTime: Math.max(0.1, Math.round(avgReviewDays * 10) / 10) || 0,
+          pendingReviews: (await storage.getProjectsByStatus('pending')).length
+        },
+        meta: {
+          verifierId: req.user!.id,
+          totalInteractions: myReviews.length,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/users/verifiers", async (req, res) => {
     try {
       const verifiers = await storage.getUsersByRole('verifier');
@@ -1096,7 +1233,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cached = cache.get<object[]>(CACHE_KEY);
       if (cached) return res.json(cached);
 
-      const projects = await storage.getProjectsByStatus("verified");
+      let projects = await storage.getProjectsByStatus("verified");
+      projects = projects.filter(p => (p as any).isListed !== false);
       cache.set(CACHE_KEY, projects, CACHE_TTL_MARKETPLACE);
       return res.json(projects);
     } catch (error: any) {
@@ -1109,8 +1247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { credits_min, credits_max, plantation_type } = req.query;
 
-      // Get all verified projects
-      let projects = await storage.getProjectsByStatus('verified');
+      // Get all verified and listed projects
+      let projects = (await storage.getProjectsByStatus('verified')).filter(p => (p as any).isListed !== false);
 
       // Apply filters
       if (credits_min) {
@@ -1163,6 +1301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contributorId,
         projectId,
         credits,
+        validated.amount || 0,
         idempotencyKey
       );
 
@@ -1443,6 +1582,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       console.error("Certificate revocation failed:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── ADMIN GOVERNANCE & LEDGER ROUTES (New Upgrade) ───────────────────────────
+
+  app.get("/api/admin/top-buyers", requireAuth, requireRole('admin'), async (_req, res) => {
+    try {
+      const topBuyers = await storage.getTopBuyers();
+      return res.json(topBuyers);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/top-contributors", requireAuth, requireRole('admin'), async (_req, res) => {
+    try {
+      const topContributors = await storage.getTopContributors();
+      return res.json(topContributors);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/admin/ledger - Add audit logging for security tracking
+  app.get("/api/admin/ledger", requireAuth, requireRole('admin'), async (req: AuthRequest, _res) => {
+    try {
+      // Log ledger access for security audit trail
+      await audit({
+        userId: req.user!.id,
+        actionType: "VIEW_LEDGER" as any,
+        entityType: "system",
+        entityId: "ledger",
+        metadata: { timestamp: new Date().toISOString() },
+      });
+      const ledger = await storage.getAdminLedger();
+      return _res.json(ledger);
+    } catch (error: any) {
+      return _res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/minting-status", requireAuth, requireRole('admin'), async (_req, res) => {
+    try {
+      const enabled = await storage.getMintingStatus();
+      return res.json({ enabled });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/minting-status", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+      await storage.setMintingStatus(enabled);
+
+      await audit({
+        userId: req.user!.id,
+        actionType: "MINTING_STATUS_CHANGED" as any,
+        entityType: "system",
+        entityId: "global",
+        metadata: { enabled },
+      });
+
+      return res.json({ success: true, enabled });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/admin/projects/:id/remove - Add UUID validation
+  app.post("/api/admin/projects/:id/remove", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      // Validate UUID format for security
+      if (!isValidUUID(id)) {
+        return res.status(400).json({ error: "Invalid Project ID format" });
+      }
+
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      await storage.updateProject(id, { isListed: false });
+
+      await audit({
+        userId: req.user!.id,
+        actionType: "PROJECT_REMOVED_FROM_MARKETPLACE" as any,
+        entityType: "project",
+        entityId: id,
+        metadata: { projectName: project.name },
+      });
+
+      return res.json({ success: true, message: "Project removed from marketplace" });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/admin/warnings - Add strict severity validation
+  app.post("/api/admin/warnings", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      const { contributorId, message, severity } = req.body;
+      if (!contributorId || !message || !severity) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Strict severity validation - only allow low, medium, critical
+      const allowedSeverity = ["low", "medium", "critical"];
+      if (!allowedSeverity.includes(severity.toLowerCase())) {
+        return res.status(400).json({ error: "Invalid severity. Allowed values: low, medium, critical" });
+      }
+
+      const warning = await storage.issueWarning({ contributorId, message, severity: severity.toLowerCase() });
+
+      await audit({
+        userId: req.user!.id,
+        actionType: "WARNING_ISSUED" as any,
+        entityType: "user",
+        entityId: contributorId,
+        metadata: { message, severity },
+      });
+
+      return res.json(warning);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/warnings/:contributorId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { contributorId } = req.params;
+      // Admin can see any, contributors can only see their own
+      if (req.user!.role !== 'admin' && req.user!.id !== contributorId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const warnings = await storage.getWarningsByContributorId(contributorId);
+      return res.json(warnings);
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/admin/rollback - Add strict type validation
+  app.post("/api/admin/rollback", requireAuth, requireRole('admin'), async (req: AuthRequest, res) => {
+    try {
+      const { targetId, type, reason } = req.body;
+      if (!targetId || !type || !reason) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Strict rollback type validation - only allow mint, buy, sell, verify, listing
+      const allowedTypes = ["mint", "buy", "sell", "verify", "listing"];
+      if (!allowedTypes.includes(type.toLowerCase())) {
+        return res.status(400).json({ error: "Invalid rollback type. Allowed values: mint, buy, sell, verify, listing" });
+      }
+
+      await storage.rollbackAction({
+        adminId: req.user!.id,
+        targetId,
+        type: type.toLowerCase(),
+        reason
+      });
+
+      await audit({
+        userId: req.user!.id,
+        actionType: "ROLLBACK_PERFORMED" as any,
+        entityType: type, // Transaction, Project, etc.
+        entityId: targetId,
+        metadata: { reason, type },
+      });
+
+      return res.json({ success: true, message: "Rollback recorded and action performed" });
+    } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
   });

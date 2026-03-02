@@ -1,175 +1,315 @@
-# Current Architecture Overview
+# Architecture Overview
 
-## A. 📁 Current Project Structure
+## Project Structure
 
 ```
-.
-├── SUPABASE_SETUP.md
-├── attached_assets/
-│   ├── prompts_and_docs/
-│   ├── images/
-│   └── stock_images/
-├── client/
-│   ├── index.html
-│   ├── public/
-│   │   └── favicon.png
-│   └── src/
-│       ├── App.tsx
-│       ├── components/
-│       ├── hooks/
-│       ├── index.css
-│       ├── lib/
-│       ├── main.tsx
-│       └── pages/
-├── components.json
-├── design_guidelines.md
-├── drizzle.config.ts
-├── package.json
-├── package-lock.json
-├── postcss.config.js
-├── replit.md
-├── server/
-│   ├── auth.ts
-│   ├── blockchain.ts
-│   ├── carbonCalculation.ts
-│   ├── db.ts
-│   ├── index.ts
-│   ├── objectAcl.ts
-│   ├── objectStorage.ts
-│   ├── routes.ts
-│   ├── seed.ts
-│   ├── storage.ts
-│   └── vite.ts
+BLUECARBONPROJECT-main/
+├── client/                    # React frontend
+│   ├── src/
+│   │   ├── components/         # Reusable UI components
+│   │   │   ├── ui/            # shadcn/ui components
+│   │   │   ├── certificate-generator.tsx
+│   │   │   ├── gis-land-map.tsx
+│   │   │   ├── hash-display.tsx
+│   │   │   ├── navbar.tsx
+│   │   │   ├── project-submission-form.tsx
+│   │   │   └── status-badge.tsx
+│   │   ├── pages/             # Page components
+│   │   │   ├── admin-dashboard.tsx
+│   │   │   ├── explorer.tsx
+│   │   │   ├── landing.tsx
+│   │   │   ├── LandingPremium.tsx
+│   │   │   ├── login.tsx
+│   │   │   ├── marketplace.tsx
+│   │   │   ├── not-found.tsx
+│   │   │   ├── privacy.tsx
+│   │   │   ├── terms.tsx
+│   │   │   ├── user-dashboard.tsx
+│   │   │   └── verifier-dashboard.tsx
+│   │   ├── hooks/             # Custom React hooks
+│   │   ├── lib/               # Utilities and contexts
+│   │   │   ├── auth-context.tsx
+│   │   │   ├── queryClient.ts
+│   │   │   ├── theme-provider.tsx
+│   │   │   └── utils.ts
+│   │   ├── types/             # TypeScript type definitions
+│   │   ├── App.tsx           # Main app component with routing
+│   │   ├── index.css         # Global styles
+│   │   └── main.tsx          # Entry point
+│   └── index.html
+├── server/                    # Express.js backend
+│   ├── auth.ts               # JWT authentication middleware
+│   ├── auditLog.ts           # Audit logging service
+│   ├── blockchain.ts          # Blockchain engine (SHA-256, Merkle)
+│   ├── carbonCalculation.ts   # Carbon sequestration calculator
+│   ├── db.ts                 # Database connection (Neon/PostgreSQL)
+│   ├── index.ts              # Server entry point
+│   ├── objectAcl.ts           # Object storage ACL
+│   ├── objectStorage.ts       # Google Cloud Storage service
+│   ├── routes.ts              # API route handlers
+│   ├── seed.ts                # Database seeding
+│   ├── storage.ts             # Storage abstraction (MemStorage/DbStorage)
+│   └── vite.ts                # Vite dev server setup
 ├── shared/
-│   └── schema.ts
-├── tailwind.config.ts
-├── tsconfig.json
-└── vite.config.ts
+│   └── schema.ts             # Drizzle ORM schema definitions
+├── migrations/                # Database migrations
+│   ├── meta/
+│   ├── 0001_reward_transactions.sql
+│   ├── 0002_admin_governance.sql
+│   └── 0003_fix_foreign_keys.sql
+├── docs/                     # Documentation
+├── attached_assets/          # Images and documents
+├── .env                      # Environment variables
+├── .env.example              # Environment template
+├── drizzle.config.ts         # Drizzle ORM configuration
+├── package.json              # Dependencies
+├── tailwind.config.ts        # Tailwind CSS configuration
+├── tsconfig.json             # TypeScript configuration
+└── vite.config.ts            # Vite configuration
 ```
 
 ---
 
-## B. 🧠 Architectural Understanding
+## Architecture Layers
 
-**Architecture Style:** Full-stack monorepo (TypeScript) with clear frontend/backend separation.
+### Client Layer (`client/`)
 
-**Layered Flow:**
+**Technology**: React + TypeScript + Vite
 
-* **Client Layer (`client/`)**
-  React + Vite SPA responsible for UI, routing, and user interaction.
+**Responsibilities**:
+- User interface and navigation
+- Form handling and validation
+- API communication via TanStack Query
+- State management via React Context
+- GIS map rendering with Leaflet
 
-* **API Layer (`server/routes.ts`)**
-  Central routing layer exposing REST endpoints.
+**Key Components**:
+- shadcn/ui for UI components
+- TanStack Query for server state
+- React Router for navigation
+- Leaflet + react-leaflet-draw for GIS
 
-* **Service Layer (`server/storage.ts`, `carbonCalculation.ts`, `blockchain.ts`)**
-  Business logic abstraction, domain calculations, and ledger-style transaction handling.
+---
 
-* **Persistence Layer (`server/db.ts`, `shared/schema.ts`)**
-  Database access through Drizzle ORM with shared type-safe schema.
+### API Layer (`server/routes.ts`)
 
-* **Shared Contract (`shared/schema.ts`)**
-  Single source of truth for data models and validation across frontend and backend.
+**Technology**: Express.js + TypeScript
 
-**Data Flow:**
+**Responsibilities**:
+- RESTful endpoint definitions
+- Request validation (Zod schemas)
+- File upload handling (Multer)
+- Response formatting
+- Rate limiting and security headers
+
+**Endpoints**: 42 total
+- Public: 16
+- Protected: 26
+- Admin-only: 10
+
+---
+
+### Service Layer
+
+**Files**: `storage.ts`, `blockchain.ts`, `carbonCalculation.ts`, `auditLog.ts`
+
+**Responsibilities**:
+- Business logic implementation
+- Database queries (Drizzle ORM)
+- Blockchain operations
+- Carbon calculation
+- Audit logging
+
+---
+
+### Persistence Layer
+
+**Technology**: PostgreSQL + Drizzle ORM
+
+**Storage Types**:
+1. **MemStorage**: In-memory (development fallback)
+2. **DbStorage**: PostgreSQL (production)
+
+**Configuration**: `USE_DATABASE=true` in `.env`
+
+---
+
+### Shared Layer (`shared/schema.ts`)
+
+**Responsibilities**:
+- TypeScript type definitions
+- Drizzle table schemas
+- Zod validation schemas
+- ENUM type definitions
+
+---
+
+## Data Flow
 
 ```
-Client (React)
-   → API (Express Routes)
-      → Services (Business Logic)
-         → Persistence (Drizzle ORM)
-            → PostgreSQL / Supabase
+User Action
+    │
+    ▼
+React Component
+    │
+    ▼
+TanStack Query → HTTP Request
+    │
+    ▼
+Express Route Handler (routes.ts)
+    │
+    ▼
+Middleware (auth, validation)
+    │
+    ▼
+Service Layer (storage.ts, blockchain.ts)
+    │
+    ▼
+Drizzle ORM
+    │
+    ▼
+PostgreSQL Database
+    │
+    ▼
+Response to Client
 ```
 
 ---
 
-## C. ⚙️ Tech Stack Inference
+## Technology Stack
 
 ### Frontend
 
-* React (TypeScript)
-* Vite
-* TailwindCSS
-* Shadcn/UI
-* Custom hooks architecture
+| Technology | Purpose |
+|------------|---------|
+| React | UI framework |
+| TypeScript | Type safety |
+| Vite | Build tool |
+| TanStack Query | Server state |
+| shadcn/ui | Component library |
+| Tailwind CSS | Styling |
+| Leaflet | GIS maps |
+| react-leaflet-draw | Map drawing |
 
 ### Backend
 
-* Node.js
-* Express
-* TypeScript
-* Custom auth layer (`auth.ts`)
-* Modular services (`storage.ts`, `carbonCalculation.ts`)
+| Technology | Purpose |
+|------------|---------|
+| Node.js | Runtime |
+| Express.js | Web framework |
+| TypeScript | Type safety |
+| Drizzle ORM | Database ORM |
+| PostgreSQL | Database |
+| JWT | Authentication |
+| bcrypt | Password hashing |
+| Multer | File uploads |
+| js-sha256 | Hashing |
+| Sentry | Error tracking |
 
-### Database
+### Infrastructure
 
-* PostgreSQL-compatible
-* Drizzle ORM
-* Zod schema validation
-
-### Infrastructure & Tooling
-
-* Vite build system
-* Tailwind + PostCSS
-* Drizzle migrations
-* Supabase integration references
-
-### Domain Systems
-
-* Carbon credit calculation engine
-* Blockchain-style ledger abstraction (`blockchain.ts`)
-* Object storage abstraction (`objectStorage.ts`)
+| Technology | Purpose |
+|------------|---------|
+| AWS RDS | PostgreSQL database |
+| Google Cloud Storage | Object storage |
+| Vercel/Node | Hosting |
 
 ---
 
-## D. 🔐 Domain & Feature Signals
+## User Roles & Permissions
 
-**Domain:** Blue Carbon Ecosystem Platform
-
-**Focus Areas:**
-
-* Mangrove ecosystems
-* Wetlands
-* Salt marsh conservation
-* Blue carbon sequestration
-
-**Implied Actors:**
-
-* Users (project creators)
-* Verifiers (validators)
-* Admins (governance)
-
-**Core Platform Capabilities:**
-
-* Project onboarding
-* Carbon sequestration calculation
-* Verification workflows
-* Ledger-based transaction tracking
-* Tokenized credit modeling
-* Storage of environmental evidence
+| Role | Dashboard | Permissions |
+|------|-----------|-------------|
+| admin | /admin | Full system control, user management, backup, certificate revocation |
+| verifier | /verifier | Project review, approval/rejection, clarification requests |
+| contributor | /dashboard | Submit projects, view own projects, view sales |
+| buyer | /marketplace | Purchase credits, view purchases, download certificates |
+| public | /, /explorer | View stats, blockchain explorer, verify certificates |
 
 ---
 
-## E. ⚠️ Architectural Observations (No Fixes)
+## Frontend Routes
 
-* Dual auth signals: presence of `SUPABASE_SETUP.md` vs custom `auth.ts` logic indicates mixed authentication direction.
-* Blockchain abstraction is logical/ledger-based, not decentralized.
-* Object storage is abstracted but environment-specific.
-* Attached assets folder indicates heavy AI-assisted design iteration history.
-* System is evolving from prototype architecture toward production structure.
-* Strong domain separation already exists (calculation, ledger, storage, auth).
+| Path | Component | Access |
+|------|-----------|--------|
+| / | Landing | Public |
+| /login | Login | Public |
+| /dashboard | UserDashboard | Contributor |
+| /marketplace | Marketplace | Buyer |
+| /admin | AdminDashboard | Admin |
+| /verifier | VerifierDashboard | Verifier |
+| /explorer | Explorer | Public |
+| /terms | TermsOfService | Public |
+| /privacy | PrivacyPolicy | Public |
+| /verify/:id | CertificateVerification | Public |
 
 ---
 
-## F. System Maturity Assessment
+## Security Features
 
-**Current State:** Advanced prototype / early production architecture
+| Feature | Implementation |
+|---------|---------------|
+| Authentication | JWT tokens |
+| Password Security | bcrypt hashing (12 rounds) |
+| Authorization | Role-based middleware |
+| Rate Limiting | express-rate-limit |
+| Security Headers | Helmet.js |
+| Audit Logging | auditLogs table |
+| CSRF Protection | Helmet configuration |
+| Input Validation | Zod schemas |
 
-**Characteristics:**
+---
 
-* Strong modular separation
-* Clear domain boundaries
-* Type-safe data modeling
-* Monorepo efficiency
-* AI-assisted design artifacts
+## Database Features
 
-This system is structurally suitable for transition into a production-grade platform with controlled hardening, security policies, and deployment pipelines.
+| Feature | Implementation |
+|---------|---------------|
+| ORM | Drizzle |
+| Migrations | Drizzle Kit |
+| Indexes | Performance optimization |
+| Soft Deletes | deletedAt timestamp |
+| Transactions | Atomic credit purchases |
+| Idempotency | idempotencyKey |
+| Foreign Keys | Referential integrity |
+
+---
+
+## Blockchain Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Hash Algorithm | SHA-256 |
+| Merkle Tree | Transaction verification |
+| Block Structure | index, timestamp, transactions, hash |
+| Chain Linking | previousHash |
+| Validator Signature | Verifier authorization |
+| Integrity Check | Hash recomputation |
+
+---
+
+## API Design Patterns
+
+### RESTful Conventions
+- GET: Retrieve resources
+- POST: Create resources
+- PUT/PATCH: Update resources
+- Nested routes: `/api/projects/:id/review`
+
+### Response Format
+```typescript
+// Success
+{ success: true, data: {...} }
+// Error
+{ message: "Error description" }
+```
+
+### Authentication
+- Bearer token in Authorization header
+- Token expires with time-to-live
+
+### Error Handling
+- 400: Bad Request (validation)
+- 401: Unauthorized
+- 403: Forbidden (role check)
+- 404: Not Found
+- 500: Server Error

@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, timestamp, real, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, real, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -51,6 +51,7 @@ export const projects = pgTable(
     clarificationNote: text("clarification_note"), // Task 2.1: Separate field for clarification messages
     submittedAt: timestamp("submitted_at").notNull(),
     landBoundary: text("land_boundary"), // GIS polygon coordinates as JSON string [[lat,lng], ...]
+    isListed: boolean("is_listed").default(true), // Admin can soft delete/hide from marketplace
     deletedAt: timestamp("deleted_at"), // Soft delete timestamp
   },
   (table) => ({
@@ -61,7 +62,7 @@ export const projects = pgTable(
   })
 );
 
-export const insertProjectSchema = createInsertSchema(projects).omit({ 
+export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
   status: true,
   verifierId: true,
@@ -88,6 +89,11 @@ export const transactions = pgTable(
     timestamp: timestamp("timestamp").notNull(),
     proofHash: text("proof_hash").notNull(),
     blockId: varchar("block_id").references(() => blocks.id),
+    // New fields for the unified ledger (Task: Admin Ledger)
+    type: text("type"), // 'Mint' | 'Buy' | 'Sell' | 'Verify' | 'Rollback'
+    buyerId: varchar("buyer_id").references(() => users.id),
+    contributorId: varchar("contributor_id").references(() => users.id),
+    status: text("status").default("Completed"),
   },
   (table) => ({
     projectIdIdx: index("transactions_project_id_idx").on(table.projectId),
@@ -126,6 +132,7 @@ export const creditTransactions = pgTable(
     contributorId: varchar("contributor_id").notNull().references(() => users.id),
     projectId: varchar("project_id").notNull().references(() => projects.id),
     credits: real("credits").notNull(),
+    amount: real("amount").default(0), // Total amount spent in USD
     timestamp: timestamp("timestamp").notNull(),
     certificateStatus: certificateStatusEnum("certificate_status").notNull().default("valid"), // "valid" | "revoked"
   },
@@ -165,6 +172,7 @@ export const creditPurchaseSchema = z.object({
   contributorId: z.string().min(1, "Contributor ID is required"),
   projectId: z.string().min(1, "Project ID is required"),
   credits: z.number().positive("Credits must be positive"),
+  amount: z.number().nonnegative("Amount must be non-negative").optional(), // Added for Admin Ledger
   idempotencyKey: z.string().optional(), // Optional client-provided key for idempotency
 });
 export type CreditPurchase = z.infer<typeof creditPurchaseSchema>;
@@ -301,3 +309,34 @@ export const AUDIT_ACTION_TYPES = {
 } as const;
 
 export type AuditActionType = (typeof AUDIT_ACTION_TYPES)[keyof typeof AUDIT_ACTION_TYPES];
+
+// ─── System Settings Table ──────────────────────────────────────────────────
+export const systemSettings = pgTable("system_settings", {
+  id: varchar("id").primaryKey(),
+  mintingEnabled: boolean("minting_enabled").default(true),
+});
+
+export type SystemSettings = typeof systemSettings.$inferSelect;
+
+// ─── Warnings Table ──────────────────────────────────────────────────────────
+export const warnings = pgTable("warnings", {
+  id: varchar("id").primaryKey(),
+  contributorId: varchar("contributor_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  severity: text("severity").notNull(), // 'Low', 'Medium', 'Critical'
+  date: timestamp("date").notNull().defaultNow(),
+});
+
+export type Warning = typeof warnings.$inferSelect;
+
+// ─── Rollbacks Table ─────────────────────────────────────────────────────────
+export const rollbacks = pgTable("rollbacks", {
+  id: varchar("id").primaryKey(),
+  adminId: varchar("admin_id").notNull().references(() => users.id),
+  targetId: varchar("target_id").notNull(),
+  type: text("type").notNull(), // 'Credit mint', 'Transaction', 'Marketplace listing'
+  reason: text("reason").notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export type Rollback = typeof rollbacks.$inferSelect;
