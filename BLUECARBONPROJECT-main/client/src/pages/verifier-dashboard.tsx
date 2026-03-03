@@ -56,9 +56,10 @@ export default function VerifierDashboard() {
     refetchInterval: 30000,
   });
 
-  const { data: blocks = [] } = useQuery<Block[]>({
+  const { data: blocksData } = useQuery<{ data: Block[], pagination: any }>({
     queryKey: ['/api/blocks'],
   });
+  const blocks = blocksData?.data ?? [];
 
 
   const reviewMutation = useMutation({

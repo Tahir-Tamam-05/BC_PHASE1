@@ -21,13 +21,15 @@ export default function Explorer() {
   const [verificationResult, setVerificationResult] = useState<'verified' | 'tampered' | null>(null);
   const [activeTab, setActiveTab] = useState('blocks');
 
-  const { data: blocks = [] } = useQuery<Block[]>({
+  const { data: blocksData } = useQuery<{ data: Block[], pagination: any }>({
     queryKey: ['/api/blocks'],
   });
+  const blocks = blocksData?.data ?? [];
 
-  const { data: allTransactions = [] } = useQuery<Transaction[]>({
+  const { data: transactionsData } = useQuery<{ data: Transaction[], pagination: any }>({
     queryKey: ['/api/transactions'],
   });
+  const allTransactions = transactionsData?.data ?? [];
 
 
   const handleVerify = () => {

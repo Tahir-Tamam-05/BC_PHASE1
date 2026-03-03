@@ -71,18 +71,20 @@ export default function AdminDashboard() {
     refetchInterval: 30000, // Auto-refresh 30s
   });
 
-  const { data: projects = [] } = useQuery<Project[]>({
+  const { data: projectsData } = useQuery<{ data: Project[], pagination: any }>({
     queryKey: ['/api/projects'],
     refetchInterval: 30000,
   });
+  const projects = projectsData?.data ?? [];
 
   const { data: verifiers = [] } = useQuery<User[]>({
     queryKey: ['/api/users/verifiers'],
   });
 
-  const { data: blocks = [] } = useQuery<Block[]>({
+  const { data: blocksData } = useQuery<{ data: Block[], pagination: any }>({
     queryKey: ['/api/blocks'],
   });
+  const blocks = blocksData?.data ?? [];
 
   const { data: topBuyers = [] } = useQuery<any[]>({
     queryKey: ['/api/admin/top-buyers'],
