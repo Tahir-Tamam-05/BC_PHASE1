@@ -1,10 +1,11 @@
 # BlueCarbon Ledger - Project Overview
 
-## 🔵 What is BlueCarbon Ledger?
+## What is BlueCarbon Ledger?
 
 **BlueCarbon Ledger** is a blockchain-based platform for tracking, verifying, and trading **Blue Carbon Credits** from ocean and coastal ecosystems.
 
 ### Key Concept: What is Blue Carbon?
+
 Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 - 🌊 **Mangroves** - sequester up to 10x more carbon than terrestrial forests
 - 🌱 **Seagrass Meadows** - store carbon in sediments for millennia
@@ -12,7 +13,7 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -36,7 +37,7 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SERVICE LAYER                                  │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Storage   │  │   Carbon    │  │  Blockchain │              │
+│  │   Storage   │  │   Carbon    │  │  Blockchain  │              │
 │  │  (Drizzle)  │  │  Calculation│  │   Engine    │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 └─────────────────────────────────────────────────────────────────┘
@@ -46,14 +47,14 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 │                    DATABASE LAYER                                 │
 │              PostgreSQL (Drizzle ORM)                            │
 │  ┌────────┐  ┌──────────┐  ┌────────────┐  ┌────────┐          │
-│  │ Users  │  │ Projects │  │ Transactions│  │ Blocks │          │
+│  │ Users  │  │ Projects │  │Transactions│  │ Blocks │          │
 │  └────────┘  └──────────┘  └────────────┘  └────────┘          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 👥 User Roles & Workflow
+## User Roles & Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -84,12 +85,21 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Role Permissions
 
-## 📊 Project Lifecycle Flow
+| Role | Dashboard | Key Permissions |
+|------|-----------|-----------------|
+| admin | /admin | User management, backup, certificate revocation, warnings, rollbacks |
+| verifier | /verifier | Project review, approve/reject/clarify |
+| contributor | /dashboard | Submit projects, view own projects, view sales |
+| buyer | /marketplace | Purchase credits, view purchase history |
+
+ Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────---
+
+## Project Lifecycle─┐
 │                 PROJECT LIFECYCLE                                │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -101,27 +111,36 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
        │                     2. Review                            │
        │                     (Pending)                            │
        │                            │                              │
-       │                     3. Approve/Reject                    │
+       │                     3. Approve/Reject                   │
        │◀───────────────────────────│                              │
        │                            │                              │
        │                    4. Create Transaction                │
        │─────────────────────────────────────────────────────────▶│
        │                            │                              │
-       │                     5. Add to Block                       │
+       │                     5. Add to Block                     │
        │                            │◀─────────────────────────────│
        │                            │                              │
        │                    6. Immutable Record                    │
        │                            │                              │
-                                    ▼
-                            ┌─────────────┐
-                            │  COMPLETE!  │
-                            │   ✅         │
-                            └─────────────┘
+                                     ▼
+                             ┌─────────────┐
+                             │  COMPLETE!  │
+                             │   ✅         │
+                             └─────────────┘
 ```
+
+### Project Status States
+
+| Status | Description | Badge Color |
+|--------|-------------|-------------|
+| pending | Awaiting verifier review | Amber |
+| verified | Approved for credit generation | Green |
+| rejected | Did not meet requirements | Red |
+| needs_clarification | Additional information required | Blue |
 
 ---
 
-## 💳 Credit Trading System
+## Credit Trading System
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -135,10 +154,10 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
         │  Status: ✅ Verified        │                            │
         │◀───────────────────────────▶│                            │
         │                            │                            │
-        │                            │  Browse Marketplace       │
+        │                            │  Browse Marketplace        │
         │                            │◀───────────────────────────│
         │                            │                            │
-        │                            │  Select: 500 credits      │
+        │                            │  Select: 500 credits       │
         │                            │◀───────────────────────────│
         │                            │                            │
         │  500 credits purchased     │                            │
@@ -148,9 +167,16 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
         │  Sales: $XXX               │                            │
 ```
 
+### Blue Points Reward System
+
+| Role | Points Earned per Credit |
+|------|------------------------|
+| Buyer | 5 BP/credit |
+| Contributor | 20 BP/credit |
+
 ---
 
-## ⛓️ Blockchain Structure
+## Blockchain Structure
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -173,69 +199,16 @@ Blue carbon refers to carbon stored in coastal and oceanic ecosystems:
 Each Block Contains:
 ┌────────────────────────────────────────┐
 │  • SHA-256 Hash (tamper-proof)         │
-│  • Merkle Root (transaction integrity) │
-│  • Previous Hash (chain linkage)       │
+│  • Merkle Root (transaction integrity)  │
+│  • Previous Hash (chain linkage)        │
 │  • Verifier Signature (proof-of-authority)│
-│  • Transaction Count                    │
+│  • Transaction Count                   │
 └────────────────────────────────────────┘
 ```
 
 ---
 
-## 🗄️ Database Schema
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      DATABASE SCHEMA                            │
-└─────────────────────────────────────────────────────────────────┘
-
-┌──────────────────┐       ┌──────────────────┐
-│      USERS       │       │    PROJECTS      │
-├──────────────────┤       ├──────────────────┤
-│ id (PK)          │       │ id (PK)          │
-│ name             │──────▶│ user_id (FK)     │
-│ email            │       │ name             │
-│ password         │       │ description      │
-│ role             │       │ location         │
-│ location         │       │ area (hectares)  │
-│ creditsPurchased │       │ ecosystem_type   │
-└──────────────────┘       │ annual_co2       │
-                           │ lifetime_co2     │
-                           │ credits_earned   │────┐
-                           │ status           │    │
-                           │ verifier_id (FK) │    │
-                           └──────────────────┘    │
-                                                  │
-                           ┌──────────────────┐    │
-                           │   TRANSACTIONS   │    │
-                           ├──────────────────┤    │
-                           │ id (PK)          │    │
-                           │ tx_id            │◀───┘
-                           │ from             │
-                           │ to               │
-                           │ credits          │
-                           │ project_id (FK)  │
-                           │ block_id (FK)    │
-                           │ proof_hash        │
-                           └──────────────────┘
-
-┌──────────────────┐       ┌──────────────────┐
-│     BLOCKS       │       │CREDIT TRANSACTIONS│
-├──────────────────┤       ├──────────────────┤
-│ id (PK)          │       │ id (PK)          │
-│ index            │       │ buyer_id (FK)    │
-│ timestamp        │       │ contributor_id  │
-│ merkle_root      │       │ project_id (FK) │
-│ previous_hash    │       │ credits         │
-│ block_hash       │       │ timestamp       │
-│ block_hash_input │       └──────────────────┘
-│ validator_sig    │
-└──────────────────┘
-```
-
----
-
-## 📈 Key Features Overview
+## Key Features
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -244,7 +217,7 @@ Each Block Contains:
 │                                                                  │
 │  🌐  BLOCKCHAIN EXPLORER                                        │
 │  ━━━━━━━━━━━━━━━━━━━━━━                                         │
-│  • View all blocks and transactions                            │
+│  • View all blocks and transactions                             │
 │  • Verify hash integrity                                        │
 │  • Public transparency                                          │
 │                                                                  │
@@ -252,70 +225,54 @@ Each Block Contains:
 │  ━━━━━━━━━━━━━━                                                 │
 │  • Browse verified projects                                     │
 │  • Purchase carbon credits                                      │
+│  • Filter by credits/plantation type                           │
 │  • View purchase history                                        │
 │                                                                  │
 │  📍  GIS MAPPING                                                │
 │  ━━━━━━━━━━━━━                                                  │
-│  • Interactive land boundary mapping                          │
+│  • Interactive land boundary mapping                            │
 │  • Polygon drawing tool                                         │
-│  • Location visualization                                       │
+│  • Location visualization                                        │
+│  • Overlap detection                                            │
 │                                                                  │
-│  📜  CERTIFICATE GENERATION                                     │
-│  ━━━━━━━━━━━━━━━━━━━━━━━                                        │
-│  • PDF carbon offset certificates                              │
-│  • Verified project details                                     │
-│  • Cryptographic proof                                          │
+│  📜  CERTIFICATE GENERATION                                      │
+│  ━━━━━━━━━━━━━━━━━━━━━━━                                       │
+│  • PDF carbon offset certificates                               │
+│  • QR code verification                                         │
+│  • Blockchain transaction linking                               │
 │                                                                  │
-│  🔐  ROLE-BASED ACCESS                                           │
-│  ━━━━━━━━━━━━━━━━━━━━━                                          │
-│  • Admin: Full system control                                    │
-│  • Verifier: Project approval                                   │
-│  • Contributor: Project submission                               │
-│  • Buyer: Credit purchase                                       │
+│  🔐  ROLE-BASED ACCESS                                          │
+│  ━━━━━━━━━━━━━━━━━━━━━                                         │
+│  • Admin: Full system control                                   │
+│  • Verifier: Project approval                                  │
+│  • Contributor: Project submission                             │
+│  • Buyer: Credit purchase                                      │
+│                                                                  │
+│  📊  ADMIN DASHBOARD                                            │
+│  ━━━━━━━━━━━━━━━━                                               │
+│  • User management                                              │
+│  • Project oversight                                            │
+│  • Top buyers/contributors                                      │
+│  • Transaction ledger                                          │
+│  • Warnings and rollbacks                                       │
+│                                                                  │
+│  🛡️  SECURITY                                                  │
+│  ━━━━━━━━━                                                      │
+│  • JWT authentication                                           │
+│  • Audit logging                                               │
+│  • Account lockout                                              │
+│  • Rate limiting                                                │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🎯 Statistics Dashboard Preview
+## Technology Stack
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    STATISTICS OVERVIEW                         │
-└─────────────────────────────────────────────────────────────────┘
-
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│   🟢 Total       │ │   📊 Active      │ │   ⛓️ Blocks      │
-│   Carbon Credits │ │   Projects       │ │   Created        │
-│                  │ │                  │ │                  │
-│     245,000+     │ │       156        │ │      1,800+      │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-
-
-ECOSYSTEM DISTRIBUTION:
-━━━━━━━━━━━━━━━━━━━━━━
-
-Mangroves     ████████████████████░░░░░░░  45%
-Seagrass      █████████████░░░░░░░░░░░░░  30%
-Salt Marsh    ██████████░░░░░░░░░░░░░░░░  15%
-Other         ████░░░░░░░░░░░░░░░░░░░░░  10%
-
-PROJECT STATUS:
-━━━━━━━━━━━━━━
-
-Verified      ██████████████████░░░░░░░  60%
-Pending       ████████░░░░░░░░░░░░░░░░░  25%
-Rejected      ████░░░░░░░░░░░░░░░░░░░░░  15%
-```
-
----
-
-## 🔧 Technology Stack
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    TECHNOLOGY STACK                             │
+│                    TECHNOLOGY STACK                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  FRONTEND                    BACKEND                            │
@@ -327,16 +284,31 @@ Rejected      ████░░░░░░░░░░░░░░░░░░
 │  Tailwind CSS                Custom Blockchain                  │
 │  Leaflet Maps                SHA-256 Hashing                    │
 │                                                                  │
-│  DESIGN PHILOSOPHY: "Futuristic Minimalism with Ocean         │
-│  Immersion" - Stripe's clarity, Linear typography,             │
-│  Coinbase's blockchain explorer patterns                       │
+│  DESIGN PHILOSOPHY: "Futuristic Minimalism with Ocean           │
+│  Immersion" - Stripe's clarity, Linear typography,              │
+│  Coinbase's blockchain explorer patterns                        │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📝 Summary
+## API Endpoints Summary
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Health | 2 | /health, /api/stats |
+| Auth | 3 | /login, /signup, /profile |
+| Users | 3 | /users/:id/role, /users/verifiers |
+| Projects | 8 | CRUD + review + certificate |
+| Blockchain | 5 | /blocks, /transactions, /export |
+| Marketplace | 5 | /marketplace, /filter, /purchase |
+| Admin | 10 | /backup, /revoke, /warnings |
+| Storage | 3 | /upload, /proof-files |
+
+---
+
+## Summary
 
 **BlueCarbon Ledger** is a full-stack platform that:
 
@@ -351,4 +323,5 @@ The platform ensures:
 - ✅ **Trust** - SHA-256 cryptography + Merkle trees
 - ✅ **Verification** - Expert review process
 - ✅ **Automation** - Carbon calculation engine
-- ✅ **Security** - Role-based access control
+- ✅ **Security** - Role-based access control + audit logging
+- ✅ **Rewards** - Blue Points loyalty system

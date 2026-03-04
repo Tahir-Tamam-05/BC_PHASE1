@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, Map, Loader2, Award } from 'lucide-react';
+import { FileText, Coins, Clock, Download, Plus, FileCheck, ShoppingCart, User, Map, Loader2, Award, AlertTriangle } from 'lucide-react';
 import { StatsCard } from '@/components/stats-card';
 import { StatusBadge } from '@/components/status-badge';
 import { SubtleOceanBackground } from '@/components/ocean-background';
@@ -49,16 +49,6 @@ export default function UserDashboard() {
     enabled: !!user?.id,
   });
 
-
-  const creditsAvailable = projects
-    .filter((p: any) => p.status === 'verified')
-    .reduce((sum: number, p: any) => sum + (p.creditsEarned || 0), 0);
-
-  const creditsSold = sales.reduce((sum: number, sale: any) => sum + sale.credits, 0);
-
-  const pendingCount = projects.filter((p: any) => p.status === 'pending').length;
-  const verifiedCount = projects.filter((p: any) => p.status === 'verified').length;
-
   const downloadCertificate = useMutation({
     mutationFn: (projectId: string) => apiRequest('GET', `/api/projects/${projectId}/certificate`),
     onSuccess: (data: any, projectId: string) => {
@@ -73,6 +63,20 @@ export default function UserDashboard() {
       toast({ title: 'Certificate downloaded', description: 'Project certificate saved successfully' });
     },
   });
+
+  const { data: warnings = [] } = useQuery<any[]>({
+    queryKey: [`/api/admin/warnings/${user?.id}`],
+    enabled: !!user?.id,
+  });
+
+  const creditsAvailable = projects
+    .filter((p: any) => p.status === 'verified')
+    .reduce((sum: number, p: any) => sum + (p.creditsEarned || 0), 0);
+
+  const creditsSold = sales.reduce((sum: number, sale: any) => sum + sale.credits, 0);
+
+  const pendingCount = projects.filter((p: any) => p.status === 'pending').length;
+  const verifiedCount = projects.filter((p: any) => p.status === 'verified').length;
 
   return (
     <div className="min-h-screen">
@@ -93,7 +97,7 @@ export default function UserDashboard() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <StatsCard
             title="Credits Available"
             value={`${creditsAvailable.toFixed(2)} tons`}
@@ -116,11 +120,41 @@ export default function UserDashboard() {
             icon={FileCheck}
           />
           <StatsCard
-            title="Pending Review"
-            value={pendingCount}
-            icon={Clock}
+            title="Admin Warnings"
+            value={warnings.length}
+            icon={AlertTriangle}
+            className={warnings.length > 0 ? 'border-amber-500 bg-amber-500/5' : ''}
           />
         </div>
+
+        {warnings.length > 0 && (
+          <Card className="border-amber-600/20 bg-amber-50/50">
+            <CardHeader className="pb-3 border-b border-amber-600/10">
+              <CardTitle className="flex items-center gap-2 text-amber-700">
+                <AlertTriangle className="w-5 h-5" />
+                Administrative Warnings
+              </CardTitle>
+              <CardDescription className="text-amber-600/80">
+                Please review the follow-up actions required by the administration.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-3">
+              {warnings.map((w: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-background/50 border border-amber-200">
+                  <div className={`mt-1 w-2 h-2 rounded-full ${w.severity === 'Critical' ? 'bg-red-500' :
+                    w.severity === 'Medium' ? 'bg-amber-500' : 'bg-blue-500'
+                    }`} />
+                  <div>
+                    <p className="text-sm font-semibold">{w.message}</p>
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1">
+                      {format(new Date(w.date), 'PPPP')} • Severity: {w.severity}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

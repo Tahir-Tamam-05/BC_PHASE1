@@ -1,8 +1,9 @@
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Clock, XCircle, MessageSquare } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, MessageSquare, Shield, Satellite } from 'lucide-react';
 
 // Task 2.1: Added 'needs_clarification' status
-export type ProjectStatus = 'pending' | 'verified' | 'rejected' | 'needs_clarification';
+// Dual-Layer: Added 'verified_phase1' and 'full_verified' for Phase 1 + Phase 2 verification
+export type ProjectStatus = 'pending' | 'verified' | 'verified_phase1' | 'full_verified' | 'rejected' | 'needs_clarification';
 
 interface StatusBadgeProps {
   status: ProjectStatus | string;
@@ -24,6 +25,18 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
       icon: CheckCircle2,
       label: 'Verified',
       className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+    },
+    // Phase 1 verification - GIS boundary mapping complete
+    verified_phase1: {
+      icon: Shield,
+      label: 'Verified – Phase 1',
+      className: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+    },
+    // Full verification - Phase 1 (GIS) + Phase 2 (MRV) complete
+    full_verified: {
+      icon: Satellite,
+      label: 'Full Verified',
+      className: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
     },
     rejected: {
       icon: XCircle,
