@@ -64,7 +64,7 @@ export function Navbar() {
         <Link href={user ? getDashboardLink() : '/'}>
           <span className="flex items-center gap-2 hover-elevate rounded-md px-3 py-2 transition-all cursor-pointer" data-testid="link-home">
             <Waves className="w-6 h-6 text-primary" />
-            <span className="font-heading text-xl font-semibold">BlueCarbon Ledger</span>
+            <span className="font-heading text-xl font-semibold">Nevara</span>
           </span>
         </Link>
 
@@ -73,9 +73,8 @@ export function Navbar() {
             {navLinks.map((link) => (
               <Link key={link.href} href={link.href}>
                 <span
-                  className={`text-sm font-medium transition-colors hover:text-primary cursor-pointer ${
-                    location === link.href ? 'text-primary' : 'text-muted-foreground'
-                  }`}
+                  className={`text-sm font-medium transition-colors hover:text-primary cursor-pointer ${location === link.href ? 'text-primary' : 'text-muted-foreground'
+                    }`}
                   data-testid={`link-${link.label.toLowerCase()}`}
                 >
                   {link.label}

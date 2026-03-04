@@ -27,7 +27,7 @@ export function ComplianceDisclaimer({
       >
         <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
         <span>
-          <strong>Voluntary Credits Only:</strong> BlueCarbon Ledger is not a government-recognized
+          <strong>Voluntary Credits Only:</strong> Nevara is not a government-recognized
           carbon registry. Credits are voluntary digital representations for ESG and sustainability
           reporting only and do not constitute compliance-market carbon credits.
         </span>
@@ -46,7 +46,7 @@ export function ComplianceDisclaimer({
       <div className="container mx-auto flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
         <p>
-          <strong>Disclaimer:</strong> BlueCarbon Ledger operates as a technology platform and is{' '}
+          <strong>Disclaimer:</strong> Nevara operates as a technology platform and is{' '}
           <strong>not a government-recognized carbon registry</strong>. All credits are voluntary
           digital representations for ESG and sustainability reporting purposes only. They do not
           constitute compliance-market carbon credits under any regulatory framework.

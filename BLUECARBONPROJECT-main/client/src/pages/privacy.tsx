@@ -20,7 +20,7 @@ export default function PrivacyPolicy() {
               <h2 className="text-xl font-semibold">1. Introduction</h2>
             </div>
             <p className="text-gray-700 dark:text-gray-300">
-              BlueCarbon Ledger ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how your personal information is collected, used, disclosed, and safeguarded when you use our platform.
+              Nevara ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how your personal information is collected, used, disclosed, and safeguarded when you use our platform.
             </p>
           </section>
 
@@ -149,13 +149,13 @@ export default function PrivacyPolicy() {
               <h2 className="text-xl font-semibold">11. Contact Us</h2>
             </div>
             <p className="text-gray-700 dark:text-gray-300">
-              For questions about this Privacy Policy or to exercise your rights, please contact us at privacy@bluecarbonledger.com
+              For questions about this Privacy Policy or to exercise your rights, please contact us at privacy@nevara.com
             </p>
           </section>
         </div>
 
         <div className="mt-12 text-center text-sm text-gray-500 dark:text-gray-400">
-          <p>© {new Date().getFullYear()} BlueCarbon Ledger. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Nevara. All rights reserved.</p>
         </div>
       </div>
     </div>
