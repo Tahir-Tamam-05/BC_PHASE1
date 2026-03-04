@@ -1,3 +1,11 @@
+import mangroveVideo from "@/assets/videos/mangrove.mp4";
+import seagrassVideo from "@/assets/videos/seagrass.mp4";
+import saltmarshVideo from "@/assets/videos/saltmarsh.mp4";
+import { useEffect, useRef, useState } from "react";
+import Lottie from "lottie-react";
+import gisAnimation from "../assets/lottie/gis.json";
+import registryAnimation from "../assets/lottie/registry.json";
+import visibilityAnimation from "../assets/lottie/visibility.json";
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,31 +14,88 @@ import { useLocation, Link } from 'wouter';
 import mangroveHero from '@assets/stock_images/mangrove_trees_in_wa_df0d8991.jpg';
 import mangroveEcosystem from '@assets/stock_images/mangrove_forest_unde_2f49118f.jpg';
 import saltMarsh from '@assets/stock_images/salt_marsh_wetland_c_09b253ba.jpg';
+function useFadeInOnScroll() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+        } else {
+          setVisible(false); // 👈 THIS makes it reset
+        }
+      },
+      { threshold: 0.4 }
+    );
+
+    if (ref.current) observer.observe(ref.current);
+
+    return () => {
+      if (ref.current) observer.unobserve(ref.current);
+    };
+  }, []);
+
+  return { ref, visible };
+}
+function useSlide(direction: "left" | "right") {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisible(true);
+      },
+      { threshold: 0.3 }
+    );
+
+    if (ref.current) observer.observe(ref.current);
+    return () => {
+      if (ref.current) observer.unobserve(ref.current);
+    };
+  }, []);
+
+  return {
+    ref,
+    className: `transition-all duration-700 ease-out ${visible
+      ? "opacity-100 translate-x-0"
+      : direction === "left"
+        ? "opacity-0 -translate-x-8"
+        : "opacity-0 translate-x-8"
+      }`,
+  };
+}
 export default function Landing() {
   const [, setLocation] = useLocation();
+  const [activeEco, setActiveEco] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<number | null>(null);
+  const step1 = useSlide("left");
+  const step2 = useSlide("right");
+  const step3 = useSlide("left");
+  const step4 = useSlide("right");
 
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden" data-testid="hero-section">
+      <section className="relative min-h-screen flex items-center justify-center">
         {/* Animated Background Image - Mangrove */}
-        <img 
-          src={mangroveHero}
-          alt="Mangrove trees in tropical coastal water with vibrant green foliage"
-          className="absolute inset-0 w-full h-full object-cover animate-slow-zoom"
-          data-testid="hero-bg-image"
-        />
-        
-        {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0B3954]/90 via-[#0B3954]/80 to-[#00A896]/70" role="presentation" />
-        
-        {/* Animated flowing gradient (simulating water movement) */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0B3954]/50 via-transparent to-[#00A896]/30 animate-wave-flow" role="presentation" />
-        
-        {/* Additional subtle pulse for depth */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent animate-pulse" style={{ animationDuration: '6s' }} role="presentation" />
-        
+        <video
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+        >
+          <source src="/hero.mp4" type="video/mp4" />
+        </video>
+
+        <div className="absolute inset-0 bg-black/0" />
+
+        {/* video background*/}
+
+
         <div className="container mx-auto px-6 py-24 relative z-10">
           <div className="max-w-5xl mx-auto text-center text-white space-y-10">
             {/* Logo and Title */}
@@ -41,317 +106,377 @@ export default function Landing() {
                 </div>
                 <Leaf className="w-10 h-10 text-[#00A896]" />
               </div>
-              <h1 className="text-6xl md:text-7xl font-bold tracking-tight" data-testid="text-hero-title">
-                BlueCarbon Ledger
+              <h1 className="text-6xl md:text-7xl font-bold tracking-tight drop-shadow-xl">
+                Nevara
               </h1>
             </div>
-            
+
             {/* Subtitle */}
-            <h2 className="text-3xl md:text-4xl font-semibold text-white/95" data-testid="text-hero-subtitle">
-              Blockchain-Powered Blue Carbon Credit Registry
+            <h2 className="text-xl md:text-2xl text-white/90 font-medium">
+              GIS-verified coastal restoration intelligence.
             </h2>
-            
-            {/* Description */}
-            <p className="text-xl md:text-2xl text-white/90 max-w-3xl mx-auto leading-relaxed" data-testid="text-hero-description">
-              Secure, transparent, and verifiable carbon credits from ocean and coastal ecosystems.
-            </p>
-            
+
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-5 pt-6">
-              <Button 
-                size="lg" 
-                className="bg-[#00A896] border-[#00A896] text-white hover:bg-[#00A896]/90 shadow-lg min-w-[180px] text-lg h-14"
+              <Button
+                size="lg"
+                className="bg-transparent border border-white/60 text-white backdrop-blur-sm hover:bg-white/10 transition-all duration-300"
                 onClick={() => setLocation('/login')}
-                data-testid="button-get-started"
               >
                 Get Started
               </Button>
-              <Button 
-                size="lg" 
-                variant="outline" 
-                className="bg-white/10 text-white border-white/40 backdrop-blur-md hover:bg-white/20 min-w-[180px] text-lg h-14"
-                onClick={() => setLocation('/explorer')}
-                data-testid="button-learn-more"
-              >
-                Learn More
-              </Button>
-            </div>
-
-            {/* Stats Section - Glassmorphism Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-16 max-w-4xl mx-auto">
-              <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-xl hover:bg-white/15 transition-all hover:scale-105">
-                <div className="text-5xl font-bold mb-3 text-white" data-testid="stat-carbon-credits">245K+</div>
-                <div className="text-white/80 text-lg" data-testid="label-carbon-credits">Carbon Credits</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-xl hover:bg-white/15 transition-all hover:scale-105">
-                <div className="text-5xl font-bold mb-3 text-white" data-testid="stat-active-projects">156</div>
-                <div className="text-white/80 text-lg" data-testid="label-active-projects">Active Projects</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-xl hover:bg-white/15 transition-all hover:scale-105">
-                <div className="text-5xl font-bold mb-3 text-white" data-testid="stat-verified-transactions">1.8K</div>
-                <div className="text-white/80 text-lg" data-testid="label-verified-transactions">Verified Transactions</div>
-              </div>
             </div>
           </div>
         </div>
       </section>
-
-      {/* How This Works Section */}
-      <section className="py-24 bg-gradient-to-b from-background via-muted/20 to-background">
+      <section id="why" className="py-24 bg-background text-center">
         <div className="container mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-5xl font-bold mb-6" data-testid="text-section-how-it-works">
-              How This Works
+          <h2 className="text-4xl font-bold mb-6">
+            Why Nevara
+          </h2>
+
+          <p className="text-lg text-muted-foreground mb-12">
+            Trust in restoration starts with clarity.
+          </p>
+
+          <div className="grid md:grid-cols-3 gap-8">
+
+            <div className="text-center space-y-4 bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition">
+              <Lottie
+                animationData={gisAnimation}
+                loop
+                className="w-32 h-32 mx-auto"
+              />
+              <h3 className="text-xl font-semibold">GIS Validation</h3>
+              <p className="text-muted-foreground">
+                Project boundaries verified through geospatial intelligence.
+              </p>
+            </div>
+
+            <div className="text-center space-y-4 bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition">
+              <Lottie
+                animationData={registryAnimation}
+                loop
+                className="w-32 h-32 mx-auto"
+              />
+              <h3 className="text-xl font-semibold">Structured Registry</h3>
+              <p className="text-muted-foreground">
+                Standardized documentation for every restoration effort.
+              </p>
+            </div>
+
+            <div className="text-center space-y-4 bg-white rounded-2xl p-8 shadow-sm hover:shadow-md transition">
+              <Lottie
+                animationData={visibilityAnimation}
+                loop
+                className="w-32 h-32 mx-auto"
+              />
+              <h3 className="text-xl font-semibold">Public Visibility</h3>
+              <p className="text-muted-foreground">
+                Open access to project information and impact.
+              </p>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* Project Lifecycle - Dark Mode */}
+      <section className="relative bg-[#021d26] py-40 text-white overflow-hidden">
+        <div className="max-w-6xl mx-auto px-6">
+
+          {/* Header */}
+          <div className="text-center mb-32">
+            <h2 className="text-5xl font-semibold tracking-tight mb-6">
+              Project Lifecycle
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-how-it-works-description">
-              A transparent, blockchain-powered process from project submission to verified carbon credits
+            <p className="text-xl text-white/70 max-w-2xl mx-auto">
+              A transparent pathway from restoration registration to verified retirement.
             </p>
           </div>
 
-          <div className="max-w-6xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {/* Step 1: Submit Projects */}
-              <div className="relative" data-testid="card-step-1">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#00A896] to-[#0B3954] flex items-center justify-center mb-6 shadow-xl">
-                    <Upload className="w-10 h-10 text-white" />
-                  </div>
-                  <div className="absolute top-10 left-[60%] hidden lg:block">
-                    <div className="w-32 h-0.5 bg-gradient-to-r from-[#00A896] to-transparent" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-4" data-testid="text-step-1-title">1. Submit Project</h3>
-                  <p className="text-muted-foreground leading-relaxed" data-testid="text-step-1-description">
-                    Submit your blue carbon restoration project with location, area, and ecosystem details. Our system automatically calculates carbon sequestration potential.
-                  </p>
-                </div>
-              </div>
+          {/* Vertical Line */}
+          <div className="absolute left-1/2 top-48 bottom-24 w-px bg-white/10 hidden md:block"></div>
 
-              {/* Step 2: Expert Verification */}
-              <div className="relative" data-testid="card-step-2">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#00A896] to-[#0B3954] flex items-center justify-center mb-6 shadow-xl">
-                    <Shield className="w-10 h-10 text-white" />
-                  </div>
-                  <div className="absolute top-10 left-[60%] hidden lg:block">
-                    <div className="w-32 h-0.5 bg-gradient-to-r from-[#00A896] to-transparent" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-4" data-testid="text-step-2-title">2. Verification</h3>
-                  <p className="text-muted-foreground leading-relaxed" data-testid="text-step-2-description">
-                    Certified verifiers review project documentation and validate carbon capture estimates using scientific methodologies.
-                  </p>
-                </div>
-              </div>
+          {/* Step 1 */}
+          <div
+            ref={step1.ref}
+            className={`${step1.className} relative grid md:grid-cols-2 gap-16 items-center mb-32`}
+          >
+            <div className="text-right pr-12">
+              <span className="text-6xl font-bold text-[#00A896]/20">01</span>
 
-              {/* Step 3: Blockchain Recording */}
-              <div className="relative" data-testid="card-step-3">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#00A896] to-[#0B3954] flex items-center justify-center mb-6 shadow-xl">
-                    <Link2 className="w-10 h-10 text-white" />
-                  </div>
-                  <div className="absolute top-10 left-[60%] hidden lg:block">
-                    <div className="w-32 h-0.5 bg-gradient-to-r from-[#00A896] to-transparent" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-4" data-testid="text-step-3-title">3. Blockchain</h3>
-                  <p className="text-muted-foreground leading-relaxed" data-testid="text-step-3-description">
-                    Approved projects are recorded on our immutable blockchain using SHA-256 cryptography and Merkle tree validation.
-                  </p>
-                </div>
-              </div>
+              <h3 className="text-3xl font-semibold mt-4">
+                Register & Map
+              </h3>
 
-              {/* Step 4: Transparent Tracking */}
-              <div className="relative" data-testid="card-step-4">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#00A896] to-[#0B3954] flex items-center justify-center mb-6 shadow-xl">
-                    <Eye className="w-10 h-10 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-4" data-testid="text-step-4-title">4. Public Ledger</h3>
-                  <p className="text-muted-foreground leading-relaxed" data-testid="text-step-4-description">
-                    All transactions, blocks, and carbon credits are publicly accessible in our blockchain explorer for complete transparency.
-                  </p>
+              <p className="text-white/70 mt-4">
+                Projects are formally registered and mapped using verified geospatial boundaries.
+              </p>
+
+              <button
+                onClick={() => setActiveStep(activeStep === 1 ? null : 1)}
+                className="mt-6 text-sm text-[#00A896] hover:underline"
+              >
+                Learn more →
+              </button>
+
+              {activeStep === 1 && (
+                <div className="mt-6 p-6 rounded-xl bg-[#032c38] text-white/70 transition-all duration-500">
+                  Boundaries are defined through GIS polygon verification and
+                  baseline ecological documentation before monitoring begins.
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Call to Action */}
-            <div className="text-center mt-16">
-              <Button 
-                size="lg" 
-                className="bg-[#00A896] text-white hover:bg-[#00A896]/90 shadow-lg text-lg h-14 px-8"
-                onClick={() => setLocation('/login')}
-                data-testid="button-start-journey"
+            <div></div>
+          </div>
+
+          {/* Step 2 */}
+          <div
+            ref={step2.ref}
+            className={`${step2.className} relative grid md:grid-cols-2 gap-16 items-center mb-32`}
+          >
+            <div></div>
+
+            <div className="text-left pl-12">
+              <span className="text-6xl font-bold text-[#00A896]/20">02</span>
+
+              <h3 className="text-3xl font-semibold mt-4">
+                Monitor & Validate
+              </h3>
+
+              <p className="text-white/70 mt-4">
+                Satellite monitoring and independent review assess ecological performance.
+              </p>
+
+              <button
+                onClick={() => setActiveStep(activeStep === 2 ? null : 2)}
+                className="mt-6 text-sm text-[#00A896] hover:underline"
               >
-                Start Your Journey
-              </Button>
+                Learn more →
+              </button>
+
+              {activeStep === 2 && (
+                <div className="mt-6 p-6 rounded-xl bg-[#032c38] text-white/70 transition-all duration-500">
+                  Continuous remote sensing and expert review confirm measurable
+                  carbon sequestration outcomes.
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Blue Carbon Ecosystems Section */}
-      <section className="py-24 bg-gradient-to-b from-background to-muted/30">
+          {/* Step 3 */}
+          <div
+            ref={step3.ref}
+            className={`${step3.className} relative grid md:grid-cols-2 gap-16 items-center mb-32`}
+          >
+            <div className="text-right pr-12">
+              <span className="text-6xl font-bold text-[#00A896]/20">03</span>
+
+              <h3 className="text-3xl font-semibold mt-4">
+                Issue Verified Credits
+              </h3>
+
+              <p className="text-white/70 mt-4">
+                Verified impact is converted into traceable carbon units.
+              </p>
+
+              <button
+                onClick={() => setActiveStep(activeStep === 3 ? null : 3)}
+                className="mt-6 text-sm text-[#00A896] hover:underline"
+              >
+                Learn more →
+              </button>
+
+              {activeStep === 3 && (
+                <div className="mt-6 p-6 rounded-xl bg-[#032c38] text-white/70 transition-all duration-500">
+                  Verified results are tokenized within a structured registry
+                  framework ensuring traceability and transparency.
+                </div>
+              )}
+            </div>
+
+            <div></div>
+          </div>
+
+          {/* Step 4 */}
+          <div
+            ref={step4.ref}
+            className={`${step4.className} text-center max-w-3xl mx-auto`}
+          >
+            <span className="text-6xl font-bold text-[#00A896]/20">04</span>
+
+            <h3 className="text-3xl font-semibold mt-4">
+              Credit Retirement
+            </h3>
+
+            <p className="text-white/70 mt-4">
+              Purchased credits are permanently retired preventing double counting.
+            </p>
+
+            <button
+              onClick={() => setActiveStep(activeStep === 4 ? null : 4)}
+              className="mt-6 text-sm text-[#00A896] hover:underline"
+            >
+              Learn more →
+            </button>
+
+            {activeStep === 4 && (
+              <div className="mt-6 p-6 rounded-xl bg-[#032c38] text-white/70 transition-all duration-500">
+                Retirement records are permanently stored ensuring credits
+                cannot be reused or reissued.
+              </div>
+            )}
+          </div>
+        </div>
+      </section >
+
+      {/* Blue Carbon Ecosystems */}
+      < section className="py-32 bg-[#021d26]" >
         <div className="container mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-5xl font-bold mb-6" data-testid="text-section-ecosystems">
+
+          <div className="text-center mb-20">
+            <h2 className="text-5xl font-bold text-white mb-6">
               Blue Carbon Ecosystems
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-ecosystems-description">
-              Supporting the world's most powerful natural carbon sinks
+            <p className="text-xl text-white/70">
+              Click an ecosystem to reveal its carbon power
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {/* Mangroves Card */}
-            <Card className="overflow-hidden border-0 shadow-xl hover:shadow-2xl transition-all hover:-translate-y-2" data-testid="card-ecosystem-mangroves">
-              <div className="relative h-64 overflow-hidden">
-                <img 
-                  src={mangroveEcosystem}
-                  alt="Mangrove trees with underwater roots in coastal water"
-                  className="w-full h-full object-cover transition-transform hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-              </div>
-              <CardContent className="p-8 bg-card">
-                <h3 className="text-2xl font-bold mb-4" data-testid="text-ecosystem-1-title">Mangroves</h3>
-                <p className="text-muted-foreground text-lg leading-relaxed" data-testid="text-ecosystem-1-description">
-                  Coastal forests that sequester up to 10x more carbon than terrestrial forests.
-                </p>
-              </CardContent>
-            </Card>
+          <div className="grid md:grid-cols-3 gap-10">
 
-            {/* Seagrass Meadows Card */}
-            <Card className="overflow-hidden border-0 shadow-xl hover:shadow-2xl transition-all hover:-translate-y-2" data-testid="card-ecosystem-seagrass">
-              <div className="relative h-64 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1583212292454-1fe6229603b7?auto=format&fit=crop&w=800&q=80"
-                  alt="Underwater seagrass meadows"
-                  className="w-full h-full object-cover transition-transform hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            {/* Mangrove */}
+            <div
+              onClick={() => setActiveEco("mangrove")}
+              className={`group relative rounded-3xl overflow-hidden cursor-pointer transition-all duration-700 ${activeEco === "mangrove"
+                ? "scale-105 ring-2 ring-[#00A896]"
+                : "opacity-80 hover:opacity-100"
+                }`}
+            >
+              <video
+                src={mangroveVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-96 object-cover group-hover:scale-110 transition-transform duration-700"
+              />
+              <div className="absolute inset-0 bg-black/40" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-3xl font-bold text-white">
+                  Mangroves
+                </h3>
               </div>
-              <CardContent className="p-8 bg-card">
-                <h3 className="text-2xl font-bold mb-4" data-testid="text-ecosystem-2-title">Seagrass Meadows</h3>
-                <p className="text-muted-foreground text-lg leading-relaxed" data-testid="text-ecosystem-2-description">
-                  Underwater meadows storing carbon in sediments for millennia.
-                </p>
-              </CardContent>
-            </Card>
+            </div>
 
-            {/* Salt Marshes Card */}
-            <Card className="overflow-hidden border-0 shadow-xl hover:shadow-2xl transition-all hover:-translate-y-2" data-testid="card-ecosystem-salt-marshes">
-              <div className="relative h-64 overflow-hidden">
-                <img 
-                  src={saltMarsh}
-                  alt="Salt marsh wetland with coastal vegetation"
-                  className="w-full h-full object-cover transition-transform hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            {/* Seagrass */}
+            <div
+              onClick={() => setActiveEco("seagrass")}
+              className={`group relative rounded-3xl overflow-hidden cursor-pointer transition-all duration-700 ${activeEco === "seagrass"
+                ? "scale-105 ring-2 ring-[#00A896]"
+                : "opacity-80 hover:opacity-100"
+                }`}
+            >
+              <video
+                src={seagrassVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-96 object-cover group-hover:scale-110 transition-transform duration-700"
+              />
+              <div className="absolute inset-0 bg-black/40" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-3xl font-bold text-white">
+                  Seagrass Meadows
+                </h3>
               </div>
-              <CardContent className="p-8 bg-card">
-                <h3 className="text-2xl font-bold mb-4" data-testid="text-ecosystem-3-title">Salt Marshes</h3>
-                <p className="text-muted-foreground text-lg leading-relaxed" data-testid="text-ecosystem-3-description">
-                  Tidal wetlands with exceptional carbon capture capabilities.
-                </p>
-              </CardContent>
-            </Card>
+            </div>
+
+            {/* Saltmarsh */}
+            <div
+              onClick={() => setActiveEco("saltmarsh")}
+              className={`group relative rounded-3xl overflow-hidden cursor-pointer transition-all duration-700 ${activeEco === "saltmarsh"
+                ? "scale-105 ring-2 ring-[#00A896]"
+                : "opacity-80 hover:opacity-100"
+                }`}
+            >
+              <video
+                src={saltmarshVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-96 object-cover group-hover:scale-110 transition-transform duration-700"
+              />
+              <div className="absolute inset-0 bg-black/40" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-3xl font-bold text-white">
+                  Salt Marshes
+                </h3>
+              </div>
+            </div>
+
           </div>
+
+          {/* Info Reveal */}
+          {activeEco && (
+            <div className="mt-20 text-center text-white max-w-3xl mx-auto transition-all duration-500">
+              {activeEco === "mangrove" && (
+                <>
+                  <h4 className="text-4xl font-bold mb-4">Mangroves</h4>
+                  <p className="text-lg text-white/80">
+                    Store over 1,000 tons of carbon per hectare — up to 10x more than terrestrial forests.
+                  </p>
+                </>
+              )}
+
+              {activeEco === "seagrass" && (
+                <>
+                  <h4 className="text-4xl font-bold mb-4">Seagrass Meadows</h4>
+                  <p className="text-lg text-white/80">
+                    Capture carbon 35x faster than rainforests and store it in ocean sediments.
+                  </p>
+                </>
+              )}
+
+              {activeEco === "saltmarsh" && (
+                <>
+                  <h4 className="text-4xl font-bold mb-4">Salt Marshes</h4>
+                  <p className="text-lg text-white/80">
+                    Lock carbon deep into tidal soils for centuries while protecting coastlines.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
         </div>
-      </section>
+      </section >
+      {/* Final Section */}
+      < section className="py-24 bg-[#0B3954] text-white" >
+        <div className="container mx-auto px-6 text-center max-w-4xl">
 
-      {/* Active Projects Section */}
-      <section className="py-24 bg-gradient-to-b from-muted/30 to-background">
-        <div className="container mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-5xl font-bold mb-6" data-testid="text-section-projects">
-              Active Projects
-            </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-projects-description">
-              Real-world coastal restoration projects making a measurable impact
-            </p>
-          </div>
+          <h2 className="text-4xl md:text-5xl font-semibold tracking-tight mb-8">
+            Climate integrity requires verification.
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
-            {/* Project 1 */}
-            <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1" data-testid="card-project-1">
-              <div className="relative h-48 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1559827260-dc66d52bef19?auto=format&fit=crop&w=600&q=80"
-                  alt="Coastal restoration project"
-                  className="w-full h-full object-cover"
-                />
-                <Badge className="absolute top-3 right-3 bg-[#00A896] text-white border-0" data-testid="badge-project-1-status">
-                  Verified
-                </Badge>
-              </div>
-              <CardContent className="p-6 bg-card">
-                <h3 className="text-xl font-bold mb-2" data-testid="text-project-1-title">Restore Mangrove Bay</h3>
-                <p className="text-sm text-muted-foreground" data-testid="text-project-1-info">Coastal restoration • 120 hectares</p>
-              </CardContent>
-            </Card>
+          <p className="text-lg text-white/70 leading-relaxed">
+            Nevara provides the geospatial and cryptographic infrastructure
+            necessary to make coastal restoration measurable and defensible.
+          </p>
 
-            {/* Project 2 */}
-            <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1" data-testid="card-project-2">
-              <div className="relative h-48 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1621451537084-482c73073a0f?auto=format&fit=crop&w=600&q=80"
-                  alt="Ocean conservation project"
-                  className="w-full h-full object-cover"
-                />
-                <Badge className="absolute top-3 right-3 bg-blue-500 text-white border-0" data-testid="badge-project-2-status">
-                  Ongoing
-                </Badge>
-              </div>
-              <CardContent className="p-6 bg-card">
-                <h3 className="text-xl font-bold mb-2" data-testid="text-project-2-title">Pacific Seagrass Revival</h3>
-                <p className="text-sm text-muted-foreground" data-testid="text-project-2-info">Underwater restoration • 85 hectares</p>
-              </CardContent>
-            </Card>
-
-            {/* Project 3 */}
-            <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1" data-testid="card-project-3">
-              <div className="relative h-48 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1509773896068-7fd415d91e2e?auto=format&fit=crop&w=600&q=80"
-                  alt="Salt marsh restoration"
-                  className="w-full h-full object-cover"
-                />
-                <Badge className="absolute top-3 right-3 bg-[#00A896] text-white border-0" data-testid="badge-project-3-status">
-                  Verified
-                </Badge>
-              </div>
-              <CardContent className="p-6 bg-card">
-                <h3 className="text-xl font-bold mb-2" data-testid="text-project-3-title">Atlantic Salt Marsh</h3>
-                <p className="text-sm text-muted-foreground" data-testid="text-project-3-info">Tidal wetlands • 200 hectares</p>
-              </CardContent>
-            </Card>
-
-            {/* Project 4 */}
-            <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all hover:-translate-y-1" data-testid="card-project-4">
-              <div className="relative h-48 overflow-hidden">
-                <img 
-                  src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=600&q=80"
-                  alt="Coastal ecosystem project"
-                  className="w-full h-full object-cover"
-                />
-                <Badge className="absolute top-3 right-3 bg-emerald-500 text-white border-0" data-testid="badge-project-4-status">
-                  New
-                </Badge>
-              </div>
-              <CardContent className="p-6 bg-card">
-                <h3 className="text-xl font-bold mb-2" data-testid="text-project-4-title">Caribbean Blue Initiative</h3>
-                <p className="text-sm text-muted-foreground" data-testid="text-project-4-info">Multi-ecosystem • 300 hectares</p>
-              </CardContent>
-            </Card>
-          </div>
         </div>
-      </section>
-
+      </section >
       {/* Footer */}
-      <footer className="py-12 bg-[#0B3954] text-white">
+      < footer className="py-12 bg-[#0B3954] text-white" >
         <div className="container mx-auto px-6 text-center">
           <div className="flex items-center justify-center gap-3 mb-4">
             <Waves className="w-6 h-6 text-[#00A896]" />
             <p className="text-lg" data-testid="text-footer-copyright">
-              © 2025 BlueCarbon Ledger. Built for a Sustainable Future.
+              © 2025 Nevara. Built for a Sustainable Future.
             </p>
           </div>
           <div className="flex justify-center gap-6 mt-4 text-sm text-gray-300">
@@ -359,7 +484,7 @@ export default function Landing() {
             <Link href="/privacy" className="hover:text-white underline">Privacy Policy</Link>
           </div>
         </div>
-      </footer>
-    </div>
+      </footer >
+    </div >
   );
 }
