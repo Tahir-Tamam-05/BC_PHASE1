@@ -1,3 +1,6 @@
+# NEVARA
+Natural Earth Verification and Registry Authority
+
 # BlueCarbon Ledger
 
 A blockchain-based platform for tracking, verifying, and trading Blue Carbon Credits from ocean and coastal ecosystems.
