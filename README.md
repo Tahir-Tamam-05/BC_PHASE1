@@ -5,6 +5,21 @@ Natural Earth Verification and Registry Authority
 
 A blockchain-based platform for tracking, verifying, and trading Blue Carbon Credits from ocean and coastal ecosystems.
 
+## Live Platform
+
+The NEVARA Blue Carbon Ledger is deployed on AWS EC2 for testing and demonstration.
+
+🌐 **Live Demo**  
+http://98.84.126.47:5000
+
+
+## Demo Video
+
+Watch the working demo of the NEVARA platform below.
+
+🎥 **Project Demo Video**  
+https://drive.google.com/file/d/1mCxiEBpeIh1VpflkyZDN8FDfo9IQbUlu/view
+
 ## Overview
 
 BlueCarbon Ledger enables:
